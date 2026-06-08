@@ -1,0 +1,3176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyBT3wlVlcWJr-DKakxeo2UByxHyZ4mjGYI",
+      authDomain: "project-insight-cb1cb.firebaseapp.com",
+      databaseURL: "https://project-insight-cb1cb-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "project-insight-cb1cb",
+      storageBucket: "project-insight-cb1cb.firebasestorage.app",
+      messagingSenderId: "388981106364",
+      appId: "1:388981106364:web:d27e79553b5265b42592b9"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    window._fbDb = db;
+    window._fbRef = ref;
+    window._fbSet = set;
+    window._fbGet = get;
+    window._fbOnValue = onValue;
+    const auth = getAuth(app);
+    window._fbAuth = auth;
+    window._fbSignIn = signInWithEmailAndPassword;
+    window._fbSignOut = signOut;
+    window._fbOnAuth = onAuthStateChanged;
+    // 認証状態の監視
+    onAuthStateChanged(auth, user => {
+      window._fbUser = user;
+      window.dispatchEvent(new CustomEvent('auth-changed', {detail: user}));
+    });
+    window._fbReady = true;
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案件情報集約システム</title>
+<style>
+  :root {
+    --bg:#f5f4f0;--surface:#fff;--surface2:#f0ede6;--border:#e0ddd5;--border2:#ccc9c0;
+    --text:#1a1915;--text2:#5a5750;--text3:#8a8780;--accent:#1a4fa0;--accent-light:#e6edf8;
+    --accent-mid:#4472c4;--new:#0f6e56;--new-light:#e1f5ee;--warn:#ba7517;--warn-light:#faeeda;
+    --danger:#a32d2d;--danger-light:#fcebeb;--radius:8px;--radius-lg:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;}
+  .header{background:var(--accent);color:#fff;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+  .header h1{font-size:16px;font-weight:600;}
+  .badge-total{background:rgba(255,255,255,0.2);color:#fff;font-size:12px;padding:3px 10px;border-radius:20px;}
+  .layout{display:flex;height:calc(100vh - 56px);}
+  .sidebar{width:270px;min-width:270px;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px 0;}
+  .main{flex:1;overflow-y:auto;padding:20px 24px;}
+  .sidebar-label{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.08em;padding:0 16px 6px;}
+  .sidebar-group-header{display:flex;align-items:center;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;user-select:none;background:var(--surface);border-bottom:1px solid var(--border);}
+  .sidebar-group-header:hover{background:#f0ede8;}
+  .sidebar-group-header .toggle-icon{margin-right:6px;font-size:10px;transition:transform .15s;display:inline-block;}
+  .sidebar-group-children{overflow:hidden;}
+  .sidebar-child{padding-left:28px !important;}
+  .sidebar-item{display:flex;align-items:flex-start;justify-content:space-between;padding:7px 16px;cursor:pointer;border-left:3px solid transparent;transition:all .15s;font-size:13px;color:var(--text2);gap:6px;}
+  .sidebar-item:hover{background:var(--surface2);color:var(--text);}
+  .sidebar-item.active{border-left-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:500;}
+  .sidebar-item span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sidebar-count{font-size:11px;background:var(--surface2);color:var(--text3);padding:2px 7px;border-radius:10px;min-width:24px;text-align:center;flex-shrink:0;}
+  .sidebar-item.active .sidebar-count{background:var(--accent);color:#fff;}
+  .sidebar-divider{height:1px;background:var(--border);margin:8px 16px;}
+  .sidebar-section{margin-bottom:8px;}
+
+  .upload-zone{border:2px dashed var(--border2);border-radius:var(--radius-lg);padding:20px 24px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:14px;background:var(--surface);}
+  .upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent-mid);background:var(--accent-light);}
+  .upload-text{color:var(--text2);font-size:13px;line-height:1.7;}
+  .upload-text strong{color:var(--accent);}
+  #fileInput{display:none;}
+
+  .detail-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px;}
+  .detail-panel-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;}
+  .detail-panel-title{font-size:13px;font-weight:600;color:var(--text);}
+  .detail-panel-toggle{font-size:12px;color:var(--text3);}
+  .detail-panel-body{display:none;padding-top:12px;}
+  .detail-panel-body.open{display:block;}
+  .detail-hint{font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:8px;}
+  .detail-textarea{width:100%;height:130px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;font-family:inherit;color:var(--text);background:var(--bg);resize:vertical;outline:none;line-height:1.6;}
+  .detail-textarea:focus{border-color:var(--accent-mid);}
+  .detail-actions{display:flex;align-items:center;gap:8px;margin-top:8px;}
+
+  .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;}
+  .stat-label{font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:500;}
+  .stat-value{font-size:22px;font-weight:600;color:var(--text);}
+  .stat-value.new{color:var(--new);}
+  .stat-value.accent{color:var(--accent);}
+
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .search-box{flex:1;min-width:180px;max-width:300px;position:relative;}
+  .search-box input{width:100%;padding:7px 12px 7px 30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);font-size:13px;color:var(--text);outline:none;}
+  .search-box input:focus{border-color:var(--accent-mid);}
+  .search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px;}
+  select.filter{padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);font-size:13px;color:var(--text);outline:none;cursor:pointer;}
+  .btn{padding:7px 14px;border-radius:var(--radius);font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text2);transition:all .15s;white-space:nowrap;}
+  .btn:hover{background:var(--surface2);color:var(--text);}
+  .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .btn-primary:hover{background:#163f80;}
+  .btn-success{background:var(--new-light);color:var(--new);border-color:#9fe1cb;}
+  .btn-success:hover{background:#9fe1cb;}
+  .btn-danger{background:var(--danger-light);color:var(--danger);border-color:#f7c1c1;}
+  .btn-danger:hover{background:#f7c1c1;}
+
+  .table-wrapper{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
+  table{width:100%;border-collapse:collapse;}
+  th{background:var(--surface2);color:var(--text2);font-size:12px;font-weight:600;padding:10px 10px;text-align:left;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;}
+  th:hover{background:var(--border);}
+  th.sort-asc::after{content:' ↑';color:var(--accent);}
+  th.sort-desc::after{content:' ↓';color:var(--accent);}
+  td{padding:0;border-bottom:1px solid var(--border);vertical-align:top;font-size:13px;}
+  tr:last-child td{border-bottom:none;}
+  .tdi{padding:9px 10px;}
+  tr.is-new .tdi{background:#f0fbf6;}
+  tr:hover .tdi{background:var(--accent-light);}
+  tr.is-new:hover .tdi{background:#d8f5e8;}
+  .det-row td{border-bottom:1px solid var(--border);}
+  .det-row .tdi{background:#fafaf8;padding:12px 16px 14px 44px;}
+  .det-row.is-new .tdi{background:#f5fdf9;}
+  .det-box{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 24px;}
+  .det-item .lbl{font-size:11px;color:var(--text3);font-weight:500;margin-bottom:2px;}
+  .det-item .val{font-size:13px;color:var(--text);line-height:1.5;}
+  .det-item.full{grid-column:1/-1;}
+  .det-item .val.summ{font-size:12px;color:var(--text2);line-height:1.6;white-space:pre-wrap;}
+  .no-det{font-size:12px;color:var(--text3);font-style:italic;}
+
+  .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;white-space:nowrap;}
+  .b-new{background:var(--new-light);color:var(--new);}
+  .b-seen{background:var(--surface2);color:var(--text3);}
+  .b-det{background:#e6edf8;color:#163f80;}
+  .b-per{background:var(--warn-light);color:var(--warn);}
+  .b-kok{background:#e6edf8;color:#163f80;}
+  .b-nou{background:#eaf3de;color:#3b6d11;}
+  .b-oth{background:var(--surface2);color:var(--text2);}
+
+  .exp-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;padding:2px 4px;line-height:1;transition:transform .2s;}
+  .exp-btn.open{transform:rotate(90deg);color:var(--accent);}
+  .exp-btn:hover{color:var(--accent);}
+
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .section-title{font-size:13px;font-weight:600;color:var(--text2);}
+  .result-count{font-size:12px;color:var(--text3);}
+
+  .empty-state{text-align:center;padding:48px 24px;color:var(--text3);}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;}
+  .empty-state h3{font-size:15px;color:var(--text2);margin-bottom:6px;font-weight:500;}
+
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--text);color:#fff;padding:12px 20px;border-radius:var(--radius);font-size:13px;z-index:999;opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;max-width:360px;}
+  .toast.show{opacity:1;transform:translateY(0);}
+  .toast.success{background:var(--new);}
+  .toast.warn{background:var(--warn);}
+
+  .import-result{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;margin-bottom:12px;display:none;font-size:13px;}
+  .import-result.show{display:block;}
+  .import-nums{display:flex;gap:20px;margin-top:4px;}
+  .import-num{color:var(--text2);}
+  .import-num span{font-weight:600;color:var(--text);}
+  .import-num span.green{color:var(--new);}
+  .import-num span.blue{color:var(--accent);}
+
+  tr.bid-checked .tdi{background:#fffbe6;}
+  tr.bid-checked:hover .tdi{background:#fff3cc;}
+  tr.bid-checked.is-koukoku .tdi{background:#fff8e0;}
+  tr.bid-checked.is-kaisatsu .tdi{background:#f0fbee;}
+  tr.is-koukoku .tdi{background:#edf4ff;}
+  tr.is-koukoku:hover .tdi{background:#d6e8ff;}
+  tr.is-kaisatsu .tdi{background:#f0faf0;}
+  tr.is-kaisatsu:hover .tdi{background:#d8f5e0;}
+  .b-koukoku{background:#1a4fa0;color:#fff;}
+  .b-kaisatsu{background:#0f6e56;color:#fff;}
+  .b-yotei{background:#e6edf8;color:#163f80;}
+  .match-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;display:flex;align-items:center;justify-content:center;}
+  .match-modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:24px 28px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;}
+  .match-row{display:grid;grid-template-columns:1fr 40px 1fr;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;}
+  .match-row:last-child{border-bottom:none;}
+  .match-arrow{text-align:center;color:var(--accent);font-size:16px;}
+  .match-name-old{color:var(--text2);}
+  .match-name-new{color:var(--text);font-weight:500;}
+  .match-score{font-size:10px;color:var(--text3);}
+  .bid-icon{font-size:17px;cursor:pointer;line-height:1;display:block;text-align:center;transition:transform .15s;}
+  .bid-icon:hover{transform:scale(1.25);}
+  .bid-on{color:#e6a817;filter:drop-shadow(0 0 2px rgba(230,168,23,0.6));}
+  .bid-off{color:#d0cdc5;}
+  .sidebar-item.multi-active{border-left-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:500;}
+  .sidebar-item.multi-active .sidebar-count{background:var(--accent);color:#fff;}
+
+  /* 紐付け承認モーダル */
+  .approval-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:28px 12px;}
+  .approval-box{background:var(--surface);border-radius:var(--radius-lg);padding:24px 28px;max-width:820px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.18);}
+  .relink-candidate:hover{background:#f5f4f0;}
+    .approval-item{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
+  .approval-item-header{background:var(--surface2);padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:13px;}
+  .approval-item-body{padding:12px 14px;}
+  .approval-candidate{border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:8px;cursor:pointer;transition:all .15s;display:flex;align-items:flex-start;gap:10px;font-size:12px;}
+  .approval-candidate:hover{border-color:var(--accent-mid);background:var(--accent-light);}
+  .approval-candidate.selected{border-color:var(--accent);background:var(--accent-light);box-shadow:0 0 0 2px var(--accent);}
+  .approval-candidate input[type=radio]{flex-shrink:0;margin-top:2px;accent-color:var(--accent);}
+  .approval-candidate-info{flex:1;}
+  .approval-score{font-size:11px;padding:2px 7px;border-radius:10px;background:#e6edf8;color:#163f80;font-weight:600;}
+  .approval-score.high{background:#e1f5ee;color:#0f6e56;}
+  .approval-score.low{background:var(--warn-light);color:var(--warn);}
+  .approval-none{font-size:12px;color:var(--text3);font-style:italic;padding:6px 0;}
+  .approval-manual-select{width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;background:var(--surface);color:var(--text);margin-top:6px;}
+  .approval-status-badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
+  .approval-status-pending{background:var(--warn-light);color:var(--warn);}
+  .approval-status-approved{background:var(--new-light);color:var(--new);}
+  .approval-status-manual{background:#e6edf8;color:#163f80;}
+  .approval-link-row{display:flex;align-items:center;gap:8px;margin-top:6px;}
+  .b-link-approved{background:var(--new-light);color:var(--new);}
+  .b-link-manual{background:#e6edf8;color:#163f80;}
+  .b-link-pending{background:var(--warn-light);color:var(--warn);}
+  .b-link-none{background:var(--surface2);color:var(--text3);}  .b-j-bid{background:#fff3cd;color:#856404;border:1px solid #ffd95a;font-size:10px;padding:1px 5px;border-radius:3px;}
+  .b-j-pass{background:#fde8e8;color:#7b2020;border:1px solid #f5c2c2;font-size:10px;padding:1px 5px;border-radius:3px;}
+  .b-j-out{background:#e8e8e8;color:#555;border:1px solid #ccc;font-size:10px;padding:1px 5px;border-radius:3px;}
+  .b-j-pending{background:#f0f0f0;color:#888;border:1px solid #ddd;font-size:10px;padding:1px 5px;border-radius:3px;}
+  .judgment-select{font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surface);cursor:pointer;font-weight:500;}
+  .j-bid{background:#fff0a0 !important;border-color:#e6c800 !important;color:#5a4a00 !important;}
+  .j-pass{background:#ffe4e4 !important;border-color:#e08080 !important;color:#6b0000 !important;}
+  .j-out{background:#e8e8e8 !important;border-color:#aaa !important;color:#444 !important;}
+  .j-none{background:var(--surface);color:var(--text3);}
+
+  /* ===== モバイル対応 (768px以下) ===== */
+  @media (max-width: 768px) {
+    .header { padding: 6px 10px; gap: 4px; flex-wrap: nowrap; }
+    .login-btn-text { font-size: 11px !important; padding: 3px 8px !important; }
+    .login-btn-text::before { content: "🔑"; }
+    #loginBtn .btn-text { display: none; }
+    .header h1 { font-size: 12px; white-space: nowrap; flex: 1; min-width: 0; }
+    .badge-total { font-size: 10px; padding: 2px 5px; white-space: nowrap; flex-shrink: 0; display: none; }
+    .layout { height: calc(100vh - 44px); }
+    .sidebar { display: none !important; }
+    .main { padding: 6px 8px; overflow-y: auto; }
+    .pc-only { display: none !important; }
+    .detail-panel { display: none !important; }
+    #importResult { display: none !important; }
+    .stats-row { gap: 6px; }
+    .stat-card { padding: 6px 8px; }
+    .stat-label { font-size: 10px; }
+    .stat-value { font-size: 16px; }
+    .toolbar { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
+    .toolbar .search-box { width: 100%; order: 0; flex: 1 1 100%; }
+    .toolbar .search-box input { width: 100%; font-size: 14px; }
+    /* 2行目: 状態・入札判定・工事種別（各33%） */
+    #statusFilterBtn   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
+    #judgmentFilterBtn { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
+    #typeFilterBtn     { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
+    /* 3行目: 発注規模・予定時期・更新日（各33%） */
+    #scaleFilterBtn    { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
+    #periodFilterBtn   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
+    #dateRangeFilter   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; margin-left: 0 !important; box-sizing: border-box; font-size: 11px; padding: 4px 4px; height: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; }
+    /* 落札会社・グラフは非表示（pc-only） */
+    /* テーブルをカード形式に */
+    .table-wrapper { overflow-x: hidden; }
+    table { display: block; width: 100%; }
+    thead { display: none; }
+    tbody { display: block; }
+    /* 通常行をカード表示 */
+    tbody tr:not(.det-row) {
+      display: flex; flex-wrap: wrap; align-items: center;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 8px; padding: 8px 10px;
+      gap: 4px; width: 100%; box-sizing: border-box;
+    }
+    tbody tr:not(.det-row) td { display: block; border: none; padding: 0; }
+    /* 1行目: 状態(order:0) | 発注機関(order:1,flex:1) | 判定(order:2) */
+    tbody tr:not(.det-row) td:nth-child(1) { display: none !important; }
+    tbody tr:not(.det-row) td:nth-child(3) { flex: 0 0 auto; order: 0; }
+    tbody tr:not(.det-row) td:nth-child(4) { flex: 1 1 auto; order: 1; min-width: 0; }
+    tbody tr:not(.det-row) td:nth-child(2) { flex: 0 0 auto; order: 2; }
+    tbody tr:not(.det-row) td:nth-child(2) select,
+    tbody tr:not(.det-row) td:nth-child(2) .judgment-select { display: none !important; }
+    tbody tr:not(.det-row) td:nth-child(2) .mobile-judgment-label { display: inline-block !important; font-size: 11px !important; white-space: nowrap !important; }
+    tbody tr:not(.det-row) td:nth-child(2) .tdi { padding: 0 !important; }
+    /* 2行目: 工事名(order:3,フル幅) */
+    tbody tr:not(.det-row) td:nth-child(5) { flex: 1 1 100%; order: 3; }
+    /* 3行目: 発注規模・工事種別・予定時期・更新日 */
+    tbody tr:not(.det-row) td:nth-child(6)  { flex: 0 0 auto; order: 4; font-size: 11px; }
+    tbody tr:not(.det-row) td:nth-child(7)  { display: none !important; }
+    tbody tr:not(.det-row) td:nth-child(8)  { display: none !important; }
+    tbody tr:not(.det-row) td:nth-child(9)  { flex: 0 0 auto; order: 4; font-size: 11px; }
+    tbody tr:not(.det-row) td:nth-child(10) { flex: 0 0 auto; order: 4; font-size: 11px; }
+    tbody tr:not(.det-row) td:nth-child(11) { flex: 0 0 auto; order: 4; font-size: 11px; color: var(--text3); }
+    /* 展開パネル */
+    tbody tr.det-row { display: block; background: #f5f4f0; border: 1px solid var(--border); border-radius: 8px; margin-top: -6px; margin-bottom: 8px; padding: 10px; box-sizing: border-box; }
+    tbody tr.det-row td { display: block; border: none; padding: 0; }
+    .det-box { padding: 6px !important; gap: 8px !important; }
+    .det-item { flex-direction: column; gap: 2px; }
+    .tdi { white-space: normal !important; word-break: break-all; }
+    .approval-box, .match-modal-box { width: 95vw !important; max-width: 95vw !important; padding: 12px !important; }
+    /* ハンバーガーボタン表示 */
+    #mobileMenuBtn { display: inline-block !important; font-size: 22px !important; }
+    /* サイドバーをオーバーレイに */
+    .sidebar {
+      display: none !important;
+      position: fixed !important; top: 0; left: 0; bottom: 0;
+      width: 280px !important; z-index: 500;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+      overflow-y: auto;
+    }
+    .sidebar.mobile-open { display: block !important; }
+    #mobileOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 499; }
+    #mobileOverlay.show { display: block; }
+    /* ▶ボタンを非表示 */
+    tbody tr:not(.det-row) td:nth-child(1) { display: none !important; }
+  }
+
+  #mobileMenuBtn { display: none; }
+  .mobile-judgment-label { display: none; }
+  .auth-required { display: none !important; }
+  .auth-ok .auth-required { display: revert !important; }
+
+</style>
+</head>
+<body>
+<div class="header">
+  <button id="mobileMenuBtn" onclick="toggleMobileMenu()" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:22px;padding:4px 12px;border-radius:6px;cursor:pointer;margin-right:6px;display:none">☰</button>
+  <h1>📋 案件情報集約システム</h1>
+  <span class="badge-total" id="headerTotal">データなし</span>
+  <span id="authUserLabel" style="font-size:11px;color:rgba(255,255,255,0.7);margin-left:12px;vertical-align:middle"></span>
+  <button id="loginBtn" onclick="showLoginModal()" style="margin-left:8px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle" class="login-btn-text">🔑 ログイン</button>
+  <button id="logoutBtn" onclick="doLogout()" style="display:none;margin-left:8px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle">🔓 ログアウト</button>
+  <button onclick="loadFromFirebase()" class="pc-only" style="margin-left:12px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle" title="Firebaseから最新データを取得">🔄 同期</button>
+  <button onclick="uploadToFirebase()" class="pc-only auth-required" style="margin-left:6px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle" title="このデバイスのデータをFirebaseに送信">⬆ 送信</button>
+</div>
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">表示フィルタ</div>
+      <div class="sidebar-item active" data-filter="all" onclick="setFilter('all',this)"><span>すべて</span><span class="sidebar-count" id="cnt-all">0</span></div>
+      <div class="sidebar-item" data-filter="yotei" onclick="setFilter('yotei',this)"><span>📋 発注予定</span><span class="sidebar-count" id="cnt-yotei">0</span></div>
+      <div class="sidebar-item" data-filter="koukoku" onclick="setFilter('koukoku',this)"><span>📢 公告中</span><span class="sidebar-count" id="cnt-koukoku">0</span></div>
+      <div class="sidebar-item" data-filter="kaisatsu" onclick="setFilter('kaisatsu',this)"><span>🔨 開札済</span><span class="sidebar-count" id="cnt-kaisatsu">0</span></div>
+      <div class="sidebar-item" data-filter="j-bid" onclick="setFilter('j-bid',this)"><span>📌 入札予定</span><span class="sidebar-count" id="cnt-j-bid">0</span></div>
+      <div class="sidebar-item" data-filter="j-pass" onclick="setFilter('j-pass',this)"><span>🚫 回避案件</span><span class="sidebar-count" id="cnt-j-pass">0</span></div>
+      <div class="sidebar-item" data-filter="j-out" onclick="setFilter('j-out',this)"><span>⛔ 対象外案件</span><span class="sidebar-count" id="cnt-j-out">0</span></div>
+
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">発注者</div>
+      <div id="orgList"></div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">入札予定時期</div>
+      <div id="periodList"></div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="upload-zone auth-required" id="dropZone" onclick="document.getElementById('fileInput').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave()" ondrop="handleDrop(event)">
+      <div class="upload-text">📂 <strong>CSVファイルをドロップ</strong> またはクリックして選択 <span style="font-size:12px;color:var(--text3)">(Shift-JIS対応／2回目以降は新着のみ追加)</span></div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv" onchange="handleFileSelect(event)">
+
+    <div class="detail-panel auth-required">
+      <div class="detail-panel-header" onclick="toggleDetailPanel()">
+        <div class="detail-panel-title">📄 詳細・開札結果を貼り付けて反映</div>
+        <span class="detail-panel-toggle" id="detailToggle">▼ 開く</span>
+      </div>
+      <div class="detail-panel-body" id="detailBody">
+        <div class="detail-hint">i-ppi.jpの案件詳細ページ（発注予定・入札の経過）をまるごとコピーして貼り付けてください。工事名で自動照合し、工期・発注規模・概要・落札者・落札価格を反映します。複数案件まとめて貼り付け可能です。</div>
+        <textarea class="detail-textarea" id="detailTA" placeholder="詳細ページ or 入札の経過ページのテキストをここに貼り付け...&#10;&#10;工事名称　令和８年度　○○工事&#10;発注規模　100百万円以上200百万円未満&#10;工期　約 8 ヶ月&#10;概要　..."></textarea>
+        <div class="detail-actions">
+          <span class="detail-hint" style="flex:1">貼り付け後「反映」を押してください。水資源機構の公告一覧（発注情報一覧）はボタンで取込。</span>
+          <button class="btn btn-success" onclick="applyDetail()">✅ 詳細を反映</button>
+          <button class="btn" style="background:#e8f4e8;border-color:#70ad47;color:#2d6a2d" onclick="applySuigenKoukoku()">🌊 水資源公告を取込</button>
+          <button class="btn" style="background:#fff3e0;border-color:#ed7d31;color:#7a3d00" onclick="applySuigenKaisatsu()">🔨 水資源入札結果を取込</button>
+          <button class="btn" onclick="document.getElementById('detailTA').value=''">クリア</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="import-result" id="importResult">
+      <strong id="importTitle"></strong>
+      <div class="import-nums">
+        <div class="import-num">取込件数 <span id="importTotal" class="blue">0</span></div>
+        <div class="import-num">新着 <span id="importNew" class="green">0</span></div>
+        <div class="import-num">重複スキップ <span id="importSkip">0</span></div>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">累計件数</div><div class="stat-value accent" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="stat-label">新着</div><div class="stat-value new" id="statNew">0</div></div>
+      <div class="stat-card"><div class="stat-label">詳細登録済</div><div class="stat-value" id="statDetail">0</div></div>
+      <div class="stat-card"><div class="stat-label">最終更新</div><div class="stat-value" id="statDate" style="font-size:14px;padding-top:4px">—</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-box"><span class="search-icon">🔍</span><input type="text" id="searchInput" placeholder="工事名・機関名・概要で検索..." oninput="applyFilters()"></div>
+      <div style="position:relative;display:inline-block">
+        <button id="statusFilterBtn" onclick="toggleDropdown('statusDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:100px;text-align:left;font-weight:500">状態：すべて ▾</button>
+        <div id="statusDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:150px;margin-top:2px">
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="yotei" onchange="applyMultiFilter()"> 📋 発注予定</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="koukoku" onchange="applyMultiFilter()"> 📢 公告中</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="kaisatsu" onchange="applyMultiFilter()"> 🔨 開札済</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="detail" onchange="applyMultiFilter()"> 📄 詳細あり</label>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="dropdownCheckAll('statusDropdown',true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="dropdownCheckAll('statusDropdown',false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <div style="position:relative;display:inline-block">
+        <button id="judgmentFilterBtn" onclick="toggleDropdown('judgmentDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:120px;text-align:left;font-weight:500">入札判定：すべて ▾</button>
+        <div id="judgmentDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:150px;margin-top:2px">
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="j-bid" onchange="applyMultiFilter()"> 📌 入札予定</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="j-pass" onchange="applyMultiFilter()"> 🚫 回避案件</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="j-out" onchange="applyMultiFilter()"> ⛔ 対象外案件</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="j-pending" onchange="applyMultiFilter()"> ― 未設定</label>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="dropdownCheckAll('judgmentDropdown',true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="dropdownCheckAll('judgmentDropdown',false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <div style="position:relative;display:inline-block">
+        <button id="typeFilterBtn" onclick="toggleDropdown('typeDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:110px;text-align:left">工事種別：すべて ▾</button>
+        <div id="typeDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:180px;margin-top:2px;max-height:240px;overflow-y:auto">
+          <div id="typeDropdownItems"></div>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="dropdownCheckAll('typeDropdown',true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="dropdownCheckAll('typeDropdown',false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <div style="position:relative;display:inline-block">
+        <button id="scaleFilterBtn" onclick="toggleScaleDropdown(event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:120px;text-align:left">発注規模：すべて ▾</button>
+        <div id="scaleDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:160px;margin-top:2px">
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku6+" onchange="applyScaleFilter()"> 6億円以上</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku5-6" onchange="applyScaleFilter()"> 5億円〜6億円</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku4-5" onchange="applyScaleFilter()"> 4億円〜5億円</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku3-4" onchange="applyScaleFilter()"> 3億円〜4億円</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku2-3" onchange="applyScaleFilter()"> 2億円〜3億円</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku1-2" onchange="applyScaleFilter()"> 1億円〜2億円</label>
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku1-" onchange="applyScaleFilter()"> 1億円以下</label>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="scaleCheckAll(true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="scaleCheckAll(false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <div style="position:relative;display:inline-block">
+        <button id="periodFilterBtn" onclick="toggleDropdown('periodDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:130px;text-align:left">予定時期：すべて ▾</button>
+        <div id="periodDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:180px;margin-top:2px;max-height:240px;overflow-y:auto">
+          <div id="periodDropdownItems"></div>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="dropdownCheckAll('periodDropdown',true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="dropdownCheckAll('periodDropdown',false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <select class="filter" id="dateRangeFilter" onchange="applyFilters()" style="margin-left:auto">
+        <option value="">更新日：全期間</option>
+        <option value="1w">直近1週間</option>
+        <option value="2w">直近2週間</option>
+        <option value="1m">直近1か月</option>
+      </select>
+      <div style="position:relative;display:inline-block" class="pc-only">
+        <button id="rakusatsuFilterBtn" onclick="toggleDropdown('rakusatsuDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:110px;text-align:left">落札会社：すべて ▾</button>
+        <div id="rakusatsuDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:200px;margin-top:2px;max-height:300px;overflow-y:auto">
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="__none__" onchange="applyRakusatsuFilter()"> ― 未記載</label>
+          <div id="rakusatsuDropdownItems"></div>
+          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
+            <button onclick="dropdownCheckAll('rakusatsuDropdown',true);applyRakusatsuFilter()" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
+            <button onclick="dropdownCheckAll('rakusatsuDropdown',false);applyRakusatsuFilter()" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn pc-only" onclick="showChart()">📊 グラフ表示</button>
+      <button class="btn btn-danger pc-only auth-required" onclick="clearAll()">🗑 クリア</button>
+      <button class="btn pc-only auth-required" onclick="showExclusionWordModal()" style="font-size:12px" title="対象外ワード管理">⛔ 対象外ワード</button>
+      <button class="btn btn-primary pc-only" onclick="exportCSV()">⬇ CSV出力</button>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title" id="activeLabel">全件表示</span>
+      <span class="result-count" id="resultCount"></span>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr>
+          <th style="width:32px"></th>
+          <th style="width:100px;text-align:center">判定</th>
+          <th style="width:52px">状態</th>
+          <th style="width:230px" onclick="sortBy('org')">発注機関</th>
+          <th style="min-width:200px;max-width:400px" onclick="sortBy('name')">工事名</th>
+          <th style="width:130px" onclick="sortBy('scale')">発注規模</th>
+          <th style="width:70px" onclick="sortBy('duration')">工期</th>
+          <th style="width:115px" onclick="sortBy('method')">入札方式</th>
+          <th style="width:95px" onclick="sortBy('type')">工事種別</th>
+          <th style="width:80px" onclick="sortBy('period')">予定時期</th>
+          <th style="width:84px" onclick="sortBy('date')">更新日</th>
+        </tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="empty-state" id="emptyState">
+        <div class="icon">📋</div>
+        <h3>CSVファイルを取り込んでください</h3>
+        <p>i-ppi.jpの検索結果CSVをドロップすると自動で整理・集約されます</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="mobileOverlay" onclick="closeMobileMenu()"></div>
+
+<!-- Chart Modal -->
+<div id="chartModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;overflow-y:auto;">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);max-width:980px;margin:32px auto;padding:24px 28px;position:relative;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div style="font-size:15px;font-weight:600;color:var(--text)">📊 発注者別・発注時期別 発注グラフ</div>
+      <button onclick="closeChart()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3);">✕</button>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <label style="font-size:12px;color:var(--text2)">表示方式：</label>
+      <select id="chartMode" onchange="drawChart()" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);">
+        <option value="count">件数</option>
+        <option value="scale">発注規模</option>
+      </select>
+      <label style="font-size:12px;color:var(--text2);margin-left:12px;">状態：</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartStatusYotei" checked onchange="drawChart()"> 📋 発注予定</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartStatusKoukoku" checked onchange="drawChart()"> 📢 公告中</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartStatusKaisatsu" onchange="drawChart()"> 🔨 開札済</label>
+      <label style="font-size:12px;color:var(--text2);margin-left:12px;">規模フィルタ：</label>
+      <select id="chartScaleFilter" onchange="drawChart()" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);">
+        <option value="">すべて</option>
+        <option value="miman">○○円未満のみ</option>
+      </select>
+      <label style="font-size:12px;color:var(--text2);margin-left:12px;">判定絞込：</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartBidBid" onchange="drawChart()"> 📌 入札予定</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartBidPass" onchange="drawChart()"> 🚫 回避</label>
+      <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)"><input type="checkbox" id="chartBidOut" onchange="drawChart()"> ⛔ 対象外</label>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">
+        発注者選択（複数可・未選択=全件）：
+        <button onclick="chartSelAll(true)" style="margin-left:8px;font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)">全選択</button>
+        <button onclick="chartSelAll(false)" style="margin-left:4px;font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface)">全解除</button>
+      </div>
+      <div id="chartOrgList" style="display:flex;flex-wrap:wrap;gap:6px;max-height:110px;overflow-y:auto;padding:8px;background:#f8f7f4;border-radius:6px;border:1px solid var(--border)"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:12px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--text3)">年度：</span>
+      <div id="chartYearTabs1" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+    </div>
+    <canvas id="chartCanvas" height="420" style="width:100%;max-width:900px;"></canvas>
+    <div id="chartLegendWrap" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text2);"></div>
+    <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--text)">全発注者合計　四半期別</span>
+        <span style="font-size:12px;color:var(--text3)">年度：</span>
+        <div id="chartYearTabs" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+      </div>
+      <canvas id="chartCanvas2" style="width:100%;max-width:900px;display:block;"></canvas>
+    </div>
+    <div id="chartLegend2" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text2);"></div>
+    
+  </div>
+</div>
+<script>
+const SK='nyusatsu_v4',SEK='nyusatsu_seen_v4';
+let recs=[],seen=new Set(),cf='all',cos=new Set(),cp='',sc='date',sd='desc',ex=new Set(),dpOpen=false;
+
+function loadFromData(recsData, seenData){
+  try{
+    if(recsData)recs=JSON.parse(recsData);
+    if(seenData)seen=new Set(JSON.parse(seenData));
+    // マイグレーション: 水資源機構の不正レコードを削除
+    const isValidSuigenCat=s=>/^水資源機構[：:].*(管理所|本社|支社)$/.test(s)||s==='水資源機構';
+    const isBadRec=r=>{
+      const org=r.org||''; const oc=r.orgCategory||'';
+      if(org.includes('水資源機構')&&oc&&!isValidSuigenCat(oc))return true;
+      if(oc.includes('水資源機構')&&!isValidSuigenCat(oc))return true;
+      return false;
+    };
+    const badRecs=recs.filter(isBadRec);
+    if(badRecs.length>0){
+      badRecs.forEach(r=>seen.delete(r.id));
+      recs=recs.filter(r=>!isBadRec(r));
+    }
+  }catch(e){console.error('loadFromData error:',e);}
+}
+function load(){
+  // まずlocalStorageから読み込んで即座に表示
+  try{
+    const d=localStorage.getItem(SK);
+    const s=localStorage.getItem(SEK);
+    loadFromData(d,s);
+  }catch(e){}
+}
+function uploadToFirebase(){
+  if(!recs.length){showToast('送信するデータがありません','warn');return;}
+  if(!window._fbReady||!window._fbDb){showToast('Firebase未接続','warn');return;}
+  const db=window._fbDb,r=window._fbRef,s=window._fbSet,g=window._fbGet;
+  // Firebaseの最終更新時刻を確認
+  g(r(db,'anken/lastUpdate')).then(snap=>{
+    const serverTime=snap.val();
+    const lastSync=window._lastSyncTime||'';
+    // 自分が最後に同期した後に他デバイスが更新していた場合は警告
+    if(serverTime&&lastSync&&serverTime>lastSync){
+      const serverDate=new Date(serverTime).toLocaleString('ja-JP');
+      if(!confirm('⚠️ 他のデバイスが '+serverDate+' に更新しています。\n\n上書きすると相手の変更が失われます。\n\nこのまま送信しますか？'))return;
+    } else {
+      if(!confirm('このデバイスのデータ（'+recs.length+'件）をFirebaseに送信します。よろしいですか？'))return;
+    }
+    const now=new Date().toISOString();
+    window._lastSyncTime=now;
+    showToast('⬆ Firebaseに送信中...','');
+    Promise.all([
+      s(r(db,'anken/recs'),JSON.stringify(recs)),
+      s(r(db,'anken/seen'),JSON.stringify([...seen])),
+      s(r(db,'anken/pending'),localStorage.getItem('nyusatsu_pending_koukoku')||'[]'),
+      s(r(db,'anken/lastUpdate'),now)
+    ]).then(()=>{
+      showToast('✅ Firebaseに送信しました（'+recs.length+'件）','success');
+    }).catch(e=>{
+      showToast('送信エラー: '+e.message,'warn');
+    });
+  }).catch(()=>{
+    // lastUpdate取得失敗→そのまま送信
+    if(!confirm('このデバイスのデータ（'+recs.length+'件）をFirebaseに送信します。よろしいですか？'))return;
+    const now=new Date().toISOString();
+    window._lastSyncTime=now;
+    Promise.all([
+      s(r(db,'anken/recs'),JSON.stringify(recs)),
+      s(r(db,'anken/seen'),JSON.stringify([...seen])),
+      s(r(db,'anken/lastUpdate'),now)
+    ]).then(()=>showToast('✅ 送信しました','success')).catch(e=>showToast('送信エラー','warn'));
+  });
+}
+function loadFromFirebase(){
+  if(!window._fbReady||!window._fbDb)return;
+  const db=window._fbDb,r=window._fbRef,g=window._fbGet;
+  showToast('🔄 Firebaseからデータを読み込み中...','');
+  g(r(db,'anken/recs')).then(snap=>{
+    const recsData=snap.val();
+    g(r(db,'anken/seen')).then(snap2=>{
+      const seenData=snap2.val();
+      if(recsData){
+        recs=[];seen=new Set();
+        loadFromData(recsData,seenData||'[]');
+        // localStorageも更新
+        try{localStorage.setItem(SK,JSON.stringify(recs));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){}
+        rebuild();
+        showToast('✅ Firebaseからデータを読み込みました（'+recs.length+'件）','success');
+      } else {
+        showToast('Firebaseにデータがありません。localStorageのデータを使用します。','warn');
+      }
+    });
+    // 保留中の公告データも取得
+    g(r(db,'anken/pending')).then(snap3=>{
+      const pending=snap3.val();
+      if(pending)try{localStorage.setItem('nyusatsu_pending_koukoku',pending);}catch(e){}
+    });
+  }).catch(e=>{
+    showToast('Firebase接続エラー: '+e.message,'warn');
+  });
+}
+function save(){
+  // ログインしていない場合はlocalStorageのみ（Firebaseには保存しない）
+  // localStorageにも保存（オフライン対応）
+  try{localStorage.setItem(SK,JSON.stringify(recs));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){}
+  // Firebaseに保存（ログイン済みのみ）
+  if(window._fbReady&&window._fbDb&&window._fbUser){
+    const db=window._fbDb,r=window._fbRef,s=window._fbSet;
+    // データを分割保存（5MB制限対策）
+    s(r(db,'anken/recs'),JSON.stringify(recs)).catch(e=>console.warn('Firebase save error:',e));
+    s(r(db,'anken/seen'),JSON.stringify([...seen])).catch(()=>{});
+    s(r(db,'anken/pending'),localStorage.getItem('nyusatsu_pending_koukoku')||'[]').catch(()=>{});
+    s(r(db,'anken/lastUpdate'),new Date().toISOString()).catch(()=>{});
+  }
+}
+function mkId(r){return btoa(encodeURIComponent((r.org||'')+'|'+(r.name||''))).replace(/=/g,'');}
+function orgCat(o){
+  if(o.includes('北海道開発局'))return '北海道開発局';
+  if(o.includes('東北地方整備局'))return '東北地整';
+  if(o.includes('関東地方整備局'))return '関東地整';
+  if(o.includes('北陸地方整備局'))return '北陸地整';
+  if(o.includes('中部地方整備局'))return '中部地整';
+  if(o.includes('近畿地方整備局'))return '近畿地整';
+  if(o.includes('中国地方整備局'))return '中国地整';
+  if(o.includes('四国地方整備局'))return '四国地整';
+  if(o.includes('九州地方整備局'))return '九州地整';
+  if(o.includes('国土技術'))return '国土技術政策研';
+  if(o.includes('大臣官房'))return '官庁営繕部';
+  if(o.includes('国土交通省'))return '国土交通省（他）';
+  if(o.includes('中国四国農政'))return '農政：中国四国';
+  if(o.includes('東北農政'))return '農政：東北';
+  if(o.includes('関東農政'))return '農政：関東';
+  if(o.includes('北陸農政'))return '農政：北陸';
+  if(o.includes('東海農政'))return '農政：東海';
+  if(o.includes('近畿農政'))return '農政：近畿';
+  if(o.includes('九州農政'))return '農政：九州';
+  if(o.includes('農林水産省'))return '農林水産省（他）';
+  if(o.includes('内閣府'))return '内閣府';
+  if(o.includes('防衛'))return '防衛省';
+  const m=o.match(/^(.{2,4}[都道府県])/);if(m)return m[1];
+  return 'その他';
+}
+function pCSV(t){
+  // RFC4180準拠パーサー: クォート内の改行・カンマを正しく処理
+  const rows=[];
+  let row=[],cur='',inQ=false,i=0;
+  const CR=13,LF=10,COMMA=44,DQUOTE=34;
+  while(i<t.length){
+    const cc=t.charCodeAt(i);
+    if(inQ){
+      if(cc===DQUOTE){
+        if(t.charCodeAt(i+1)===DQUOTE){cur+='"';i+=2;continue;}
+        inQ=false;i++;continue;
+      }
+      cur+=t[i];
+    } else {
+      if(cc===DQUOTE){inQ=true;}
+      else if(cc===COMMA){row.push(cur);cur='';}
+      else if(cc===CR&&t.charCodeAt(i+1)===LF){row.push(cur);rows.push(row);row=[];cur='';i+=2;continue;}
+      else if(cc===LF||cc===CR){row.push(cur);rows.push(row);row=[];cur='';}
+      else{cur+=t[i];}
+    }
+    i++;
+  }
+  if(cur||row.length)row.push(cur);
+  if(row.length>1||row[0])rows.push(row);
+  return rows;
+}
+function handleFileSelect(e){const f=e.target.files[0];if(f)readF(f);e.target.value='';}
+function handleDragOver(e){e.preventDefault();document.getElementById('dropZone').classList.add('drag-over');}
+function handleDragLeave(){document.getElementById('dropZone').classList.remove('drag-over');}
+function handleDrop(e){e.preventDefault();handleDragLeave();const f=e.dataTransfer.files[0];if(f)readF(f);}
+function readF(f){
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const buf=e.target.result;
+    const bytes=new Uint8Array(buf);
+    const isUtf8Bom=(bytes[0]===0xEF&&bytes[1]===0xBB&&bytes[2]===0xBF);
+    if(isUtf8Bom){
+      // UTF-8 BOM = 水資源機構CSV確定。専用関数で処理
+      const txt=new TextDecoder('utf-8').decode(buf.slice(3));
+      importSuigen(txt,f.name);
+    } else {
+      let txt;
+      try{txt=new TextDecoder('shift-jis').decode(buf);}
+      catch(e1){txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);}
+      importData(txt,f.name);
+    }
+  };
+  fr.readAsArrayBuffer(f);
+}
+
+function importData(text,fname){
+  const rows=pCSV(text);
+  let format='ippi',hi=-1;
+  for(let i=0;i<rows.length;i++){
+    const j=rows[i].join('');
+    if(j.includes('案件番号')&&j.includes('完了区分')){hi=i;format='smp0010';break;}
+    if(j.includes('開札日')){hi=i;format=j.includes('公告日')?'kaisatsu':'koukoku';break;}
+    if(j.includes('公告日')||j.includes('入札書提出')){hi=i;format='koukoku';break;}
+    if(j.includes('発注機関')){hi=i;format='ippi';break;}
+  }
+  if(hi<0){showToast('CSVの形式を認識できませんでした','warn');return;}
+  const header=rows[hi].map(h=>{let s='';for(let k=0;k<h.length;k++){const cc=h.charCodeAt(k);if(cc!==10&&cc!==13)s+=h[k];}return s.trim();});
+  const data=rows.slice(hi+1).filter(r=>r.length>=2&&(r[0]||'').trim());
+
+  // 公告・開札・SMP0010CSVは照合処理へ
+  if(format==='koukoku'){matchKoukoku(data,header,fname);return;}
+  if(format==='kaisatsu'){matchKaisatsu(data,header,fname);return;}
+  if(format==='smp0010'){importSmp0010(data,header,fname);return;}
+
+
+  // ippi: 発注予定CSVを取り込む（ヘッダーベースでカラム検出）
+  let nc=0,sc2=0;
+  // ヘッダ行からカラムインデックスを動的検出
+  const icol=name=>header.findIndex(h=>h.includes(name));
+  const ic_org  = icol('発注機関')>=0?icol('発注機関'):0;
+  const ic_name = icol('工事名')>=0?icol('工事名'):1;
+  const ic_meth = icol('入札契約方式')>=0?icol('入札契約方式'):icol('入札方式')>=0?icol('入札方式'):2;
+  const ic_type = icol('工事種別')>=0?icol('工事種別'):3;
+  const ic_per  = icol('入札予定時期')>=0?icol('入札予定時期'):icol('公告予定時期')>=0?icol('公告予定時期'):4;
+  const ic_date = icol('更新日')>=0?icol('更新日'):icol('最終更新')>=0?icol('最終更新'):5;
+  const ic_scale= icol('発注規模')>=0?icol('発注規模'):-1;
+  const ic_dur  = icol('工期')>=0?icol('工期'):-1;
+  const ic_place= icol('工事場所')>=0?icol('工事場所'):-1;
+  let updated=0;
+  for(const row of data){
+    const recDate=(row[ic_date]||'').trim();
+    let recPeriod=(row[ic_per]||'').trim();
+    // 「第N四半期」のみで年度がない場合、更新日から年度(Rxx)を算出して付与
+    if(recPeriod&&!/R\d/.test(recPeriod)&&recDate){
+      const dm=recDate.match(/(\d{4})[\/\-](\d{2})/);
+      if(dm){
+        const y=+dm[1],m=+dm[2];
+        const fy=m>=4?y:y-1;// 4月始まり年度
+        recPeriod='R'+(fy-2018)+' '+recPeriod;
+      }
+    }
+    const rec={org:(row[ic_org]||'').trim(),name:(row[ic_name]||'').trim(),method:(row[ic_meth]||'').trim(),
+      type:(row[ic_type]||'').trim(),period:recPeriod,date:recDate,
+      orgCategory:'',id:'',
+      scale:ic_scale>=0?(row[ic_scale]||'').trim():'',
+      duration:ic_dur>=0?(row[ic_dur]||'').trim():'',
+      summary:'',
+      place:ic_place>=0?(row[ic_place]||'').trim():''};
+    if(!rec.name)continue;
+    rec.orgCategory=orgCat(rec.org);
+    rec.id=mkId(rec);
+    // 同一IDの場合（完全一致）は更新日が新しければ上書き
+    if(seen.has(rec.id)){
+      // 同一IDのレコードを更新（ステータス問わず発注予定フィールドを上書き）
+      const existing=recs.find(r=>r.id===rec.id);
+      if(existing){
+        existing.org=rec.org;existing.name=rec.name;existing.method=rec.method;
+        existing.type=rec.type;existing.period=rec.period;existing.date=rec.date;
+        if(rec.scale)existing.scale=rec.scale;
+        if(rec.duration)existing.duration=rec.duration;
+        if(rec.place)existing.place=rec.place;
+        updated++;
+      } else {sc2++;}
+      continue;
+    }
+    // 同一機関・同一工事名で発注予定のものが既にあれば更新日比較して上書き
+    const strip=n=>n.replace(/[\s\u3000　]+/g,'');
+    const dupIdx=recs.findIndex(r=>
+      r.orgCategory===rec.orgCategory&&
+      strip(r.name)===strip(rec.name)
+    );
+    if(dupIdx>=0){
+      const ex=recs[dupIdx];
+      if(true){
+        // 更新日が新しい→発注予定フィールドのみ上書き（公告・判定情報は保持）
+        ex.org=rec.org;ex.name=rec.name;ex.method=rec.method;
+        ex.type=rec.type;ex.period=rec.period;ex.date=rec.date;
+        if(rec.scale)ex.scale=rec.scale;
+        if(rec.duration)ex.duration=rec.duration;
+        if(rec.place)ex.place=rec.place;
+        // IDも更新（稀にhash変わる場合）
+        seen.add(rec.id);
+        updated++;
+      } else {sc2++;}
+      continue;
+    }
+    seen.add(rec.id);recs.push(rec);nc++;
+  }
+  save();
+  const ir=document.getElementById('importResult');ir.classList.add('show');
+  document.getElementById('importTitle').textContent='📥 '+fname+' を取込みました';
+  document.getElementById('importTotal').textContent=data.length;
+  document.getElementById('importNew').textContent=nc;
+  document.getElementById('importSkip').textContent=sc2;
+  showToast('新着 '+nc+'件 追加・更新 '+updated+'件（重複スキップ '+sc2+'件）','success');
+  rebuild();applyExclusionJudgments();
+}
+
+// ── 公告CSV照合 ──────────────────────────────────
+function simScore(a,b){
+  // 正規化：スペース・年度表記を除去して比較
+  const norm=s=>s.replace(/[\s　]/g,'').replace(/令和\d+年度/,'').replace(/R\d+/i,'').replace(/（[^）]*）/g,'').replace(/\([^)]*\)/g,'').toLowerCase();
+  const na=norm(a),nb=norm(b);
+  if(na===nb)return 1.0;
+  if(na.includes(nb)||nb.includes(na))return 0.85;
+  // bigram類似度
+  const bigrams=s=>{const bg=new Set();for(let i=0;i<s.length-1;i++)bg.add(s.slice(i,i+2));return bg;};
+  const ba=bigrams(na),bb=bigrams(nb);
+  let inter=0;for(const g of ba)if(bb.has(g))inter++;
+  const union=ba.size+bb.size-inter;
+  return union>0?inter/union:0;
+}
+
+function importSuigen(text,fname){
+  const rows=pCSV(text);
+  // ヘッダ行を探す（「契約担当」を含む行）
+  let hi=-1;
+  for(let i=0;i<rows.length;i++){
+    if(rows[i].join('').includes('契約担当')){hi=i;break;}
+  }
+  if(hi<0){showToast('水資源機構CSVのヘッダが見つかりません','warn');return;}
+
+  // charCodeAtでLF/CR除去してヘッダをクリーニング
+  const header=rows[hi].map(h=>{
+    let s='';for(let j=0;j<h.length;j++){const cc=h.charCodeAt(j);if(cc!==10&&cc!==13)s+=h[j];}return s.trim();
+  });
+  const col=name=>header.indexOf(name);
+
+  const c_org=col('契約担当事務所')>=0?col('契約担当事務所'):0;
+  const c_method=col('入札方式')>=0?col('入札方式'):2;
+  const c_type=col('工事種別')>=0?col('工事種別'):3;
+  const c_name=col('工事名')>=0?col('工事名'):4;
+  const c_place=col('工事場所')>=0?col('工事場所'):5;
+  const c_summary=col('工事概要')>=0?col('工事概要'):6;
+  const c_duration=col('工期')>=0?col('工期'):7;
+  const c_scale=col('発注規模')>=0?col('発注規模'):8;
+  const c_period=col('公告予定時期')>=0?col('公告予定時期'):10;
+
+  const data=rows.slice(hi+1).filter(r=>r.length>=2&&(r[0]||'').trim());
+  let nc=0,sc2=0;
+
+  for(const row of data){
+    const kanrisho=(row[c_org]||'').trim();
+    const orgName='水資源機構／'+kanrisho;
+    const orgCategoryName='水資源機構：'+kanrisho;
+
+    let rawPeriod=(row[c_period]||'').trim();
+    const pm=rawPeriod.match(/第(\d)四半期.*令和(\d+)/);
+    if(pm)rawPeriod='R'+pm[2]+' 第'+pm[1]+'四半期';
+
+    let rawScale=(row[c_scale]||'').trim();
+    let scaleClean='';
+    for(let si=0;si<rawScale.length;si++){const scc=rawScale.charCodeAt(si);if(scc!==44&&scc!==12288)scaleClean+=rawScale[si];}
+    rawScale=scaleClean;
+
+    const rec={
+      org:orgName,
+      name:(row[c_name]||'').trim(),
+      method:(row[c_method]||'').trim(),
+      type:(row[c_type]||'').trim(),
+      period:rawPeriod,
+      date:'',
+      orgCategory:orgCategoryName,
+      id:'',
+      scale:rawScale,
+      duration:(row[c_duration]||'').trim(),
+      summary:(row[c_summary]||'').trim(),
+      place:(row[c_place]||'').trim()
+    };
+    if(!rec.name)continue;
+    rec.orgCategory=orgCategoryName;
+    rec.id=mkId(rec);
+    if(seen.has(rec.id)){sc2++;continue;}
+    seen.add(rec.id);recs.push(rec);nc++;
+  }
+
+  save();rebuild();
+  showToast('水資源機構: 新着'+nc+'件 追加（重複'+sc2+'件スキップ）','success');
+}
+
+
+// 水資源機構の公告一覧テキスト（Webページからコピー）をパース・照合
+function parseSuigenKoukokuList(text){
+  const lines=text.split('\n').map(l=>l.trim());
+  const dateRe=/^\d{4}\/\d{2}\/\d{2}$/;
+  const noRe=/^\d+$/;
+  const records=[];
+  let i=0;
+  while(i<lines.length){
+    // No.行を探す
+    if(noRe.test(lines[i])&&i+8<lines.length){
+      const kanrisho=(lines[i+1]||'').trim();
+      const name=(lines[i+3]||'').trim().replace(/\u3000/g,' ').replace(/\s+/g,' ');
+      const type=(lines[i+4]||'').trim();
+      const place=(lines[i+5]||'').trim();
+      const method=(lines[i+6]||'').trim();
+      const date=(lines[i+7]||'').trim();
+      if(kanrisho&&name&&dateRe.test(date)){
+        records.push({kanrisho,name,type,place,method,date,
+          org:'水資源機構／'+kanrisho,
+          orgCategory:'水資源機構：'+kanrisho});
+      }
+      i+=9;
+    } else i++;
+  }
+  return records;
+}
+
+function parseSuigenKaisatsuList(text){
+  // 水資源機構「入札結果情報一覧」テキストをパース
+  // 構造: No→管理所→紙/電子→工事名→履行場所→入札方式→入札執行日→落札業者名 (8行/件)
+  const lines=text.split('\n').map(l=>l.trim());
+  const dateRe=/^\d{4}\/\d{2}\/\d{2}$/;
+  const noRe=/^\d+$/;
+  const records=[];
+  let i=0;
+  while(i<lines.length){
+    if(noRe.test(lines[i])&&i+7<=lines.length){
+      const kanrisho=(lines[i+1]||'').trim();
+      // lines[i+2]: 紙/電子（スキップ）
+      const name=(lines[i+3]||'').trim().replace(/\u3000/g,' ').replace(/\s+/g,' ');
+      const place=(lines[i+4]||'').trim();
+      const method=(lines[i+5]||'').trim();
+      const date=(lines[i+6]||'').trim();
+      const rakusatsu=(lines[i+7]||'').trim();
+      if(kanrisho&&name&&dateRe.test(date)){
+        records.push({kanrisho,name,place,method,
+          kaisatsuDate:date,rakusatsuSha:rakusatsu,
+          org:'水資源機構／'+kanrisho,
+          orgCategory:'水資源機構：'+kanrisho});
+      }
+      i+=8;
+    } else i++;
+  }
+  return records;
+}
+
+function applySuigenKaisatsu(){
+  const raw=document.getElementById('detailTA').value.trim();
+  if(!raw){showToast('テキストが入力されていません','warn');return;}
+  const records=parseSuigenKaisatsuList(raw);
+  if(!records.length){showToast('水資源機構入札結果一覧の形式を認識できませんでした','warn');return;}
+  let matched=0,skipped=0,notFound=[];
+  for(const rec of records){
+    // 公告中（koukoku）かつ工事名100%一致のみ照合
+    const idx=recs.findIndex(r=>{
+      if(r.orgCategory!==rec.orgCategory)return false;
+      if(r._status!=='koukoku')return false;
+      const rn=r._koukokuName||r.name;
+      return simScore(rn,rec.name)>=1.0;
+    });
+    if(idx>=0){
+      recs[idx]._status='kaisatsu';
+      recs[idx]._kaisatsuDate=rec.kaisatsuDate;
+      if(rec.rakusatsuSha)recs[idx].rakusatsuSha=rec.rakusatsuSha;
+      if(rec.place&&!recs[idx].place)recs[idx].place=rec.place;
+      // 開札済移行時: 更新日を開札日に変更
+      if(rec.kaisatsuDate)recs[idx].date=rec.kaisatsuDate.replace(/\//g,'/');
+      ex.add(recs[idx].id);
+      matched++;
+    } else {
+      // 公告データなし or 照合不可 → スキップ
+      skipped++;
+      notFound.push(rec.name);
+    }
+  }
+  save();rebuild();
+  document.getElementById('detailTA').value='';
+  showToast(`水資源入札結果：${records.length}件認識 → 照合${matched}件・スキップ${skipped}件`,'success');
+  if(notFound.length>0&&notFound.length<=5)showToast('未照合: '+notFound.join('、'),'warn');
+}
+
+
+function applySuigenKoukoku(){
+  const raw=document.getElementById('detailTA').value.trim();
+  if(!raw){showToast('テキストが入力されていません','warn');return;}
+  const records=parseSuigenKoukokuList(raw);
+  if(!records.length){showToast('水資源機構公告一覧の形式を認識できませんでした','warn');return;}
+  const THRESHOLD=0.40;
+  const strip=n=>n.replace(/^(【[^】]*】\s*)+/,'').replace(/[\s\u3000　]+/g,'').replace(/令和\d+年度/g,'').replace(/R\d+/gi,'');
+  // 既に公告中・開札済になっている案件の公告名セット（再取込スキップ用）
+  const alreadyLinked=new Set(
+    recs.filter(r=>r._status==='koukoku'||r._status==='kaisatsu')
+        .map(r=>(r._koukokuName||r.name).trim())
+  );
+  // 各公告レコードの候補を算出してpendingListを構築
+  let skippedAlreadyS=0;
+  const pendingList=records.filter(rec=>{
+    if(alreadyLinked.has(rec.name.trim())){skippedAlreadyS++;return false;}
+    return true;
+  }).map(rec=>{
+    const candidates=recs
+      .filter(r=>r.orgCategory===rec.orgCategory&&!r._status)// 発注予定のみ（公告中・開札済は除外）
+      .map(r=>({r,score:simScore(r.name,rec.name)}))
+      .filter(x=>x.score>=THRESHOLD)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,3)
+      .map(x=>({id:x.r.id,name:x.r.name,org:x.r.orgCategory,score:Math.round(x.score*100)}));
+    const entry={
+      kName:rec.name,kOrgRaw:rec.org,kOrgCat:rec.orgCategory,
+      kDate:rec.date,kMethod:rec.method,kType:rec.type,kScale:'',kPlace:rec.place,
+      candidates,linkStatus:'pending',linkedId:null
+    };
+    // 100%一致は自動確定
+    if(candidates.length>0&&candidates[0].score>=100){
+      _applyKoukokuLink(entry,candidates[0].id,'approved');
+      entry.autoApproved=true;
+    }
+    return entry;
+  });
+  savePendingKoukoku(pendingList);
+  save();rebuild();
+  document.getElementById('detailTA').value='';
+  if(skippedAlreadyS>0)showToast('照合済みスキップ：'+skippedAlreadyS+'件（公告中・開札済）','');
+  if(pendingList.length===0){showToast('全件照合済みのためスキップしました','success');return;}
+  showKoukokuApprovalModal(pendingList,'水資源機構公告一覧');
+}
+
+
+// SMP0010照合の確定処理
+function applySmp0010Entry(entry,targetId){
+  const target=recs.find(r=>r.id===targetId);
+  if(!target)return;
+  const newJudgment=entry.smpStatus==='ACTIVE'?'bid':'pass';
+  target._judgment=newJudgment;
+  target._bid=newJudgment==='bid';
+  if(entry.smpRank)target._smpRank=entry.smpRank;
+  entry.linkedId=targetId;entry.linkStatus='approved';
+}
+
+function confirmSmp0010Approval(){
+  const modal=document.getElementById('smp0010Modal');
+  if(!modal)return;
+  const entries=window._smp0010Entries||[];
+  let applied=0,skipped=0;
+  for(const entry of entries){
+    if(entry.linkStatus==='approved'&&entry.linkedId){
+      applied++;
+    } else if(entry.linkStatus==='none'){
+      skipped++;
+    } else {
+      // 手動選択を確認
+      const sel=document.querySelector('#smp-item-'+entry._idx+' input[name="smp-target-'+entry._idx+'"]:checked');
+      if(sel&&sel.value){
+        applySmp0010Entry(entry,sel.value);applied++;
+      } else {
+        skipped++;
+      }
+    }
+  }
+  save();rebuild();
+  modal.remove();
+  showToast('SMP0010: '+applied+'件 判定反映・'+skipped+'件 スキップ','success');
+}
+
+function showSmp0010Modal(entries,fname){
+  window._smp0010Entries=entries;
+  const autoCount=entries.filter(e=>e.linkStatus==='approved').length;
+  const pendCount=entries.filter(e=>e.linkStatus==='pending').length;
+  let html='<div class="approval-modal" id="smp0010Modal">';
+  html+='<div class="approval-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-size:16px;font-weight:600;color:var(--text)">📋 SMP0010 判定取込</div>';
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escH(fname)+' — 自動確定：'+autoCount+'件 / 要確認：'+pendCount+'件</div></div>';
+  html+='<button onclick="document.getElementById(\'smp0010Modal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  // 一括承認ボタン
+  html+='<div style="margin-bottom:12px;display:flex;gap:8px">';
+  html+='<button class="btn" onclick="document.querySelectorAll(\'.smp-radio-top\').forEach(r=>{if(r.dataset.rank===\'1\')r.checked=true});confirmSmp0010Approval()" style="font-size:12px">⚡ 最高スコアで一括承認</button>';
+  html+='<button class="btn" onclick="confirmSmp0010Approval()" style="font-size:12px">✅ 承認して反映</button>';
+  html+='</div>';
+  html+='<div style="max-height:480px;overflow-y:auto">';
+  for(let i=0;i<entries.length;i++){
+    const e=entries[i];
+    e._idx=i;
+    const jLabel=e.smpStatus==='ACTIVE'?'<span class="b-j-bid" style="font-size:11px;padding:1px 5px;border-radius:3px">📌 入札予定</span>':'<span class="b-j-pass" style="font-size:11px;padding:1px 5px;border-radius:3px">🚫 回避</span>';
+    const isAuto=e.linkStatus==='approved';
+    html+='<div class="approval-item" id="smp-item-'+i+'" style="'+(isAuto?'opacity:0.6;background:#f0fdf4;border-color:#86efac':'')+'">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">';
+    html+='<div><div style="font-size:12px;font-weight:600">'+escH(e.smpName)+'</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">'+jLabel+(e.smpRank?' <span style="background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:10px">'+escH(e.smpRank)+'</span>':'')+(isAuto?' ✅ 自動確定':'')+'</div></div></div>';
+    if(!isAuto){
+      if(e.candidates.length>0){
+        html+='<div style="font-size:11px;color:var(--text3);margin-bottom:4px">紐付け先を選択：</div>';
+        html+='<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">';
+        for(let j=0;j<e.candidates.length;j++){
+          const c=e.candidates[j];
+          const scoreColor=c.score>=80?'#0f6e56':c.score>=60?'#ed7d31':'#8a8780';
+          // 候補のステータスを取得
+          const cRec=recs.find(r=>r.id===c.id);
+          const cSt=cRec?cRec._status:'';
+          const cStLabel=cSt==='koukoku'?'<span style="font-size:10px;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 5px;margin-left:4px">📢公告中</span>':cSt==='kaisatsu'?'<span style="font-size:10px;background:#d1fae5;color:#065f46;border-radius:3px;padding:1px 5px;margin-left:4px">🔨開札済</span>':'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;border-radius:3px;padding:1px 5px;margin-left:4px">📋発注予定</span>';
+          html+='<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;">';
+          html+='<input type="radio" name="smp-target-'+i+'" value="'+escH(c.id)+'" class="smp-radio-top" data-rank="'+(j+1)+'"'+(j===0?' checked':'')+' style="flex-shrink:0">';
+          html+='<div style="flex:1"><div style="font-size:12px">'+escH(c.name)+cStLabel+'</div>';
+          html+='<div style="font-size:10px;color:var(--text3)">'+escH(c.org)+'</div></div>';
+          html+='<span style="font-size:11px;font-weight:600;color:'+scoreColor+'">'+c.score+'%</span></label>';
+        }
+        html+='<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;">';
+        html+='<input type="radio" name="smp-target-'+i+'" value=""> <span style="font-size:12px;color:var(--text3)">未紐付けでスキップ</span></label>';
+        html+='</div>';
+      }
+    } else {
+      const linked=recs.find(r=>r.id===e.linkedId);
+      if(linked)html+='<div style="font-size:11px;color:#0f6e56;padding:4px 8px;background:#f0fdf4;border-radius:4px">→ '+escH(linked.name)+'</div>';
+    }
+    html+='</div>';
+  }
+  html+='</div>';
+  html+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+  html+='<button class="btn" onclick="document.getElementById(\'smp0010Modal\').remove()">キャンセル</button>';
+  html+='<button class="btn btn-primary" onclick="confirmSmp0010Approval()">✅ 承認して反映</button>';
+  html+='</div></div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+
+function importSmp0010(data,header,fname){
+  // SMP0010: A=案件番号, B=案件名称, C=受注ランク, D=完了区分(名称)
+  const col=name=>header.findIndex(h=>h.trim().includes(name));
+  const c_name=col('案件名称')>=0?col('案件名称'):1;
+  const c_rank=col('受注ランク')>=0?col('受注ランク'):2;
+  const c_status=col('完了区分')>=0?col('完了区分'):3;
+  const THRESHOLD=0.62;
+
+  const entries=[];
+  for(const row of data){
+    const smpName=(row[c_name]||'').trim();
+    const smpRank=(row[c_rank]||'').trim();
+    const smpStatus=(row[c_status]||'').trim();
+    if(!smpName)continue;
+    if(smpStatus!=='ACTIVE'&&smpStatus!=='回避(による完了)')continue;
+
+    // 候補を算出（simScore順）
+    const candidates=recs
+      .map(r=>({r,score:simScore(r.name,smpName)}))
+      .filter(x=>x.score>=THRESHOLD)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,3)
+      .map(x=>({id:x.r.id,name:x.r.name,org:x.r.orgCategory,score:Math.round(x.score*100)}));
+
+    // 候補なし or 既に_smpRankが設定済み（紐づけ完了）はスキップ
+    if(candidates.length===0)continue;
+    // 既に紐づけされてランクが設定済みの案件はスキップ
+    const alreadyBound=candidates.some(c=>{
+      const r=recs.find(rec=>rec.id===c.id);
+      return r&&r._smpRank;
+    });
+    if(alreadyBound&&candidates[0].score>=100)continue;
+    const entry={smpName,smpRank,smpStatus,candidates,linkStatus:'pending',linkedId:null};
+
+    // 100%一致は自動確定
+    if(candidates.length>0&&candidates[0].score>=100){
+      applySmp0010Entry(entry,candidates[0].id);
+      entry.autoApproved=true;
+    }
+    entries.push(entry);
+  }
+
+  showSmp0010Modal(entries,fname);
+}
+
+
+function matchKoukoku(data,header,fname){
+  // 列インデックス検出（部分一致で柔軟に対応）
+  const col=name=>header.findIndex(h=>h.includes(name));
+  const c_org=col('発注機関')>=0?col('発注機関'):0;
+  const c_name=col('工事名')>=0?col('工事名'):1;
+  const c_method=col('入札契約方式')>=0?col('入札契約方式'):col('入札方式')>=0?col('入札方式'):2;
+  const c_type=col('工事種別')>=0?col('工事種別'):3;
+  const c_date=col('公告日')>=0?col('公告日'):col('開札日')>=0?col('開札日'):col('入札書提出')>=0?col('入札書提出'):4;
+  const c_scale=col('発注規模')>=0?col('発注規模'):-1;  // 地整案件の発注規模列を検出
+
+  const pendingKoukoku=[];
+
+  // 既に照合済みの公告工事名セット（公告中・開札済のkoukokuName or name）
+  const alreadyLinkedNames=new Set(
+    recs.filter(r=>r._status==='koukoku'||r._status==='kaisatsu')
+        .map(r=>(r._koukokuName||r.name).trim())
+  );
+
+  let skippedAlready=0;
+  for(const row of data){
+    const kName=(row[c_name]||'').trim();
+    if(!kName)continue;
+    const kOrgRaw=(row[c_org]||'').trim();
+    // 「国土交通省九州地方整備局 ／ 川内川河川事務所」→ orgCategory取得
+    const kOrgCat=orgCat(kOrgRaw.split(/[／/]/)[0].trim()||kOrgRaw);
+
+    // 既に照合済み（公告中・開札済）の工事はスキップ
+    if(alreadyLinkedNames.has(kName)){skippedAlready++;continue;}
+
+    // 同一orgCategoryのみで候補検索
+    const sameCatCandidates=recs.filter(r=>r._status!=='koukoku'&&r._status!=='kaisatsu'&&r.orgCategory===kOrgCat);
+
+    const kDate=(row[c_date]||'').trim();
+    const kMethod=(row[c_method]||'').trim();
+    const kType=(row[c_type]||'').trim();
+    const kScale=c_scale>=0?(row[c_scale]||'').trim():'';  // 発注規模を取得
+
+    // スコア上位3候補を収集（自動確定はしない）
+    const CANDIDATE_THRESHOLD=0.40;
+    const scoredCandidates=sameCatCandidates
+      .map(r=>({r,score:simScore(r.name,kName)}))
+      .filter(x=>x.score>=CANDIDATE_THRESHOLD)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,3);
+
+    // 100%一致は自動確定、それ以外は承認待ち
+    const topScore=scoredCandidates.length>0?scoredCandidates[0].score:0;
+    const koukokuEntry={
+      kName,kOrgRaw,kOrgCat,kDate,kMethod,kType,kScale,
+      candidates:scoredCandidates.map(x=>({id:x.r.id,name:x.r.name,org:x.r.orgCategory,score:Math.round(x.score*100)})),
+      linkStatus:'pending',
+      linkedId:null
+    };
+    if(topScore>=1.0&&scoredCandidates.length>0){
+      // 100%一致: 自動確定
+      _applyKoukokuLink(koukokuEntry,scoredCandidates[0].r.id,'approved');
+      koukokuEntry.autoApproved=true;
+    }
+    pendingKoukoku.push(koukokuEntry);
+  }
+
+  // 保留中の公告データをlocalStorageに保存
+  pendingKoukoku._skippedAlready=skippedAlready;
+  savePendingKoukoku(pendingKoukoku);
+  save();rebuild();
+  showKoukokuApprovalModal(pendingKoukoku,fname);
+  if(skippedAlready>0&&pendingKoukoku.length===0){showToast('全'+skippedAlready+'件は照合済みのためスキップしました','success');}
+}
+
+// 保留中の公告紐付けをlocalStorageに保存
+function savePendingKoukoku(list){
+  const existing=loadPendingKoukoku();
+  const merged=[...existing,...list];
+  // 同一kNameの重複は最新で上書き
+  const map=new Map();
+  for(const e of merged)map.set(e.kOrgCat+'|'+e.kName,e);
+  const pendingJson=JSON.stringify([...map.values()]);
+  localStorage.setItem('nyusatsu_pending_koukoku',pendingJson);
+  if(window._fbReady&&window._fbDb){
+    window._fbSet(window._fbRef(window._fbDb,'anken/pending'),pendingJson).catch(()=>{});
+  }
+}
+function loadPendingKoukoku(){
+  try{const d=localStorage.getItem('nyusatsu_pending_koukoku');return d?JSON.parse(d):[];}catch(e){return[];}
+}
+function clearPendingKoukoku(kNames){
+  // 承認済みエントリを保留リストから除去
+  let list=loadPendingKoukoku();
+  list=list.filter(e=>!kNames.has(e.kOrgCat+'|'+e.kName));
+  localStorage.setItem('nyusatsu_pending_koukoku',JSON.stringify(list));
+}
+
+// 公告紐付け承認モーダル
+let _approvalCallback=null;
+function showKoukokuApprovalModal(pendingList,fname){
+  const allRecs=recs; // 手動選択用
+  let html='<div class="approval-modal" id="approvalModal">';
+  html+='<div class="approval-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">';
+  html+='<div><div style="font-size:16px;font-weight:600;color:var(--text)">📢 公告CSV 紐付け承認</div>';
+  const autoCount=pendingList.filter(e=>e.autoApproved).length;
+  const pendCount=pendingList.filter(e=>!e.autoApproved).length;
+  const skipCount=pendingList._skippedAlready||0;
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escH(fname)+' — 自動確定：'+autoCount+'件 / 要確認：'+pendCount+'件'+(skipCount?' / 照合済みスキップ：'+skipCount+'件':'')+'。</div></div>';
+  html+='<button onclick="closeApprovalModal(false)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+
+  for(let i=0;i<pendingList.length;i++){
+    const e=pendingList[i];
+    if(e.autoApproved){
+      html+='<div class="approval-item" id="aitem-'+i+'" style="opacity:0.55;background:#f0fdf4;border-color:#86efac">';
+    } else {
+      html+='<div class="approval-item" id="aitem-'+i+'">';
+    }
+    html+='<div class="approval-item-header">';
+    html+='<span style="font-size:11px;color:var(--text3);flex-shrink:0">#'+(i+1)+'</span>';
+    html+='<span class="badge b-koukoku" style="font-size:10px">公告中</span>';
+    html+='<span style="font-weight:600;flex:1">'+ escH(e.kName)+'</span>';
+    html+='<span style="font-size:11px;color:var(--text3)">'+ escH(e.kOrgCat)+'</span>';
+    if(e.kDate)html+='<span style="font-size:11px;color:var(--text3)">公告日:'+ escH(e.kDate)+'</span>';
+    html+='</div>';
+    html+='<div class="approval-item-body">';
+
+    if(e.candidates.length>0){
+      html+='<div style="font-size:11px;color:var(--text2);margin-bottom:8px;font-weight:600">候補の発注予定工事（ラジオボタンで選択→承認）：</div>';
+      for(let ci=0;ci<e.candidates.length;ci++){
+        const c=e.candidates[ci];
+        const scoreClass=c.score>=80?'high':c.score>=60?'':'low';
+        html+='<label class="approval-candidate" id="acandidate-'+i+'-'+ci+'" onclick="selectCandidate('+i+','+ci+')">';
+        html+='<input type="radio" name="alink-'+i+'" value="'+escH(c.id)+'" onchange="selectCandidate('+i+','+ci+')">';
+        html+='<div class="approval-candidate-info">';
+        html+='<div style="font-weight:500;margin-bottom:2px">'+escH(c.name)+'</div>';
+        html+='<div style="font-size:11px;color:var(--text3)">'+escH(c.org)+'</div>';
+        html+='</div>';
+        html+='<span class="approval-score '+scoreClass+'">類似度 '+c.score+'%</span>';
+        html+='</label>';
+      }
+    } else {
+      html+='<div class="approval-none">⚠ 候補の発注予定工事が見つかりませんでした。以下から手動で選択するか、未紐付けのまま追加できます。</div>';
+    }
+
+    // 手動選択（セレクトボックス）
+    html+='<div style="margin-top:10px">';
+    html+='<label style="font-size:11px;color:var(--text2);font-weight:600">手動で発注予定工事を選択：</label>';
+    html+='<select class="approval-manual-select" id="amanual-'+i+'" onchange="onManualSelect('+i+',this)">';
+    html+='<option value="">— 手動選択（上記候補以外）</option>';
+    const manualCands=allRecs.filter(r=>r.orgCategory===e.kOrgCat&&r._status!=='kaisatsu');
+    for(const r of manualCands){
+      html+='<option value="'+escH(r.id)+'">'+escH(r.name)+'</option>';
+    }
+    html+='</select></div>';
+
+    html+='<div class="approval-link-row" style="margin-top:12px">';
+    html+='<button class="btn btn-success" style="font-size:12px" onclick="approveLink('+i+')">✅ 紐付け承認</button>';
+    html+='<button class="btn" style="font-size:12px" onclick="approveNone('+i+')">➕ 未紐付けで追加</button>';
+    html+='<span id="astatus-'+i+'" class="approval-status-badge approval-status-pending" style="margin-left:auto">未確認</span>';
+    html+='</div>';
+    html+='</div></div>';
+  }
+
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">';
+  html+='<span style="font-size:12px;color:var(--text3)" id="approvalProgress">0 / '+pendingList.length+' 件 確認済</span>';
+  html+='<div style="display:flex;gap:8px">';
+  html+='<button class="btn" style="font-size:12px" onclick="approveAll()">⚡ すべて最高スコアで一括承認</button>';
+  html+='<button class="btn btn-primary" onclick="closeApprovalModal(true)">完了・閉じる</button>';
+  html+='</div></div>';
+  html+='</div></div>';
+
+  const div=document.createElement('div');div.id='approvalModalWrap';div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+  window._pendingApprovalList=pendingList;
+  window._approvalDone=new Set();
+  window._approvalFname=fname;
+}
+
+function selectCandidate(itemIdx,candIdx){
+  // ラジオ選択時にカードのスタイルを更新
+  const wrap=document.getElementById('aitem-'+itemIdx);
+  if(!wrap)return;
+  wrap.querySelectorAll('.approval-candidate').forEach((el,i)=>{
+    el.classList.toggle('selected',i===candIdx);
+  });
+  const radio=document.querySelector('#aitem-'+itemIdx+' input[name="alink-'+itemIdx+'"]');
+  // 手動選択をリセット
+  const ms=document.getElementById('amanual-'+itemIdx);
+  if(ms)ms.value='';
+}
+function onManualSelect(itemIdx,sel){
+  // 手動選択時にラジオ選択を解除
+  if(!sel.value)return;
+  document.querySelectorAll('input[name="alink-'+itemIdx+'"]').forEach(r=>r.checked=false);
+  document.querySelectorAll('#aitem-'+itemIdx+' .approval-candidate').forEach(el=>el.classList.remove('selected'));
+}
+
+function getSelectedLinkId(itemIdx){
+  // ラジオ選択を優先、なければ手動選択
+  const checked=document.querySelector('input[name="alink-'+itemIdx+'"]:checked');
+  if(checked&&checked.value)return{id:checked.value,type:'approved'};
+  const ms=document.getElementById('amanual-'+itemIdx);
+  if(ms&&ms.value)return{id:ms.value,type:'manual'};
+  return null;
+}
+
+function approveLink(itemIdx){
+  const e=window._pendingApprovalList[itemIdx];
+  if(!e)return;
+  const sel=getSelectedLinkId(itemIdx);
+  if(!sel){showToast('紐付け先を選択してください','warn');return;}
+  _applyKoukokuLink(e,sel.id,sel.type);
+  _markApprovalDone(itemIdx,sel.type);
+}
+
+function approveNone(itemIdx){
+  const e=window._pendingApprovalList[itemIdx];
+  if(!e)return;
+  // 未紐付けで新規公告案件として追加
+  const rec={
+    org:e.kOrgRaw,name:e.kName,method:e.kMethod,type:e.kType,
+    period:'',date:e.kDate,orgCategory:e.kOrgCat,
+    id:'',scale:e.kScale,duration:'',summary:'',place:'',
+    _status:'koukoku',_koukokuName:e.kName,_koukokuDate:e.kDate,_matchScore:0,
+    _linkStatus:'none'
+  };
+  rec.id=mkId(rec);
+  if(!seen.has(rec.id)){seen.add(rec.id);recs.push(rec);}
+  e.linkStatus='none';e.linkedId=null;
+  save();rebuild();
+  _markApprovalDone(itemIdx,'none');
+}
+
+function approveAll(){
+  const list=window._pendingApprovalList;
+  if(!list)return;
+  for(let i=0;i<list.length;i++){
+    if(window._approvalDone&&window._approvalDone.has(i))continue;
+    const e=list[i];
+    if(e.candidates.length>0){
+      _applyKoukokuLink(e,e.candidates[0].id,'approved');
+      _markApprovalDone(i,'approved');
+    } else {
+      approveNone(i);
+    }
+  }
+  save();rebuild();
+  showToast('一括承認しました','success');
+}
+
+function _applyKoukokuLink(e,targetId,linkType){
+  const target=recs.find(r=>r.id===targetId);
+  if(!target)return;
+  target._status='koukoku';
+  target._koukokuName=e.kName;
+  target._koukokuOrg=e.kOrgRaw;
+  target._koukokuDate=e.kDate;
+  target._matchScore=e.candidates.find(c=>c.id===targetId)?.score||0;
+  target._linkStatus=linkType;
+  if(e.kMethod)target.method=e.kMethod;
+  if(e.kType&&!target.type)target.type=e.kType;
+  if(e.kScale&&!target.scale)target.scale=e.kScale;
+  if(e.kPlace&&!target.place)target.place=e.kPlace;
+  // 公告紐付け時: 更新日を公告日に変更
+  if(e.kDate)target.date=e.kDate;
+  e.linkStatus=linkType;e.linkedId=targetId;
+}
+
+function _markApprovalDone(itemIdx,type){
+  if(!window._approvalDone)window._approvalDone=new Set();
+  window._approvalDone.add(itemIdx);
+  const statusEl=document.getElementById('astatus-'+itemIdx);
+  if(statusEl){
+    const labels={approved:'✅ 承認済',manual:'🔧 手動設定',none:'➕ 未紐付け追加'};
+    const cls={approved:'approval-status-approved',manual:'approval-status-manual',none:'approval-status-pending'};
+    statusEl.textContent=labels[type]||'確認済';
+    statusEl.className='approval-status-badge '+(cls[type]||'approval-status-approved');
+  }
+  const item=document.getElementById('aitem-'+itemIdx);
+  if(item)item.style.opacity='0.7';
+  // 進捗更新
+  const total=(window._pendingApprovalList||[]).length;
+  const done=(window._approvalDone||new Set()).size;
+  const prog=document.getElementById('approvalProgress');
+  if(prog)prog.textContent=done+' / '+total+' 件 確認済';
+  save();rebuild();
+}
+
+function closeApprovalModal(save2){
+  // 承認済みエントリを保留リストからクリア
+  const list=window._pendingApprovalList||[];
+  const doneKeys=new Set();
+  list.forEach((e,i)=>{if(window._approvalDone&&window._approvalDone.has(i))doneKeys.add(e.kOrgCat+'|'+e.kName);});
+  clearPendingKoukoku(doneKeys);
+  window._pendingApprovalList=null;
+  window._approvalDone=null;
+  const el=document.getElementById('approvalModal');
+  if(el)el.remove();
+  if(save2){save();rebuild();showToast('公告データの紐付けを保存しました','success');}
+}
+
+// 紐付け解除・再設定
+function unlinkKoukoku(id){
+  const rec=recs.find(r=>r.id===id);
+  if(!rec||!(rec._status==='koukoku'||rec._status==='kaisatsu'))return;
+  if(!confirm('この案件の公告紐付けを解除します。発注予定ステータスに戻ります。\n解除後、手動で再紐付けできます。'))return;
+  // 解除前に公告情報を保持（再紐付けモーダルで使用）
+  const koukokuInfo={
+    kName:rec._koukokuName||rec.name,
+    kOrgRaw:rec._koukokuOrg||rec.org,
+    kOrgCat:rec.orgCategory,
+    kDate:rec._koukokuDate||'',
+    kMethod:rec.method||'',
+    kType:rec.type||'',
+    kScale:rec.scale||'',
+    kPlace:rec.place||''
+  };
+  if(rec._status==='kaisatsu'){
+    // 開札済の場合は落札情報をクリアしてkoukoku（公告中）に戻す
+    delete rec.rakusatsuSha;delete rec.rakusatsuPrice;
+    delete rec._kaisatsuDate;delete rec._keiyakuDate;
+    rec._status='koukoku';
+    save();rebuild();
+    showToast('開札情報を解除しました。公告中に戻りました。');
+  } else {
+    // 公告中の場合は発注予定に戻してモーダル表示
+    rec._status=undefined;
+    delete rec._koukokuName;delete rec._koukokuOrg;delete rec._koukokuDate;delete rec._matchScore;delete rec._linkStatus;
+    save();rebuild();
+    showToast('紐付けを解除しました');
+    showRelinkModal(koukokuInfo);
+  }
+}
+
+function showRelinkModal(koukokuInfo){
+  // 同一orgCat内の発注予定案件リストを表示して手動紐付け
+  const candidates=recs.filter(r=>r.orgCategory===koukokuInfo.kOrgCat&&!r._status);
+  let html='<div class="approval-modal" id="relinkModal">';
+  html+='<div class="approval-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-size:16px;font-weight:600;color:var(--text)">🔗 公告の手動紐付け</div>';
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">解除した公告を発注予定工事に再紐付けします</div></div>';
+  html+='<button onclick="closeRelinkModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  // 公告情報
+  html+='<div style="background:#edf4ff;border:1px solid #b3cef5;border-radius:8px;padding:12px 16px;margin-bottom:16px">';
+  html+='<div style="font-size:11px;color:#1a4fa0;font-weight:600;margin-bottom:4px">📢 紐付けする公告</div>';
+  html+='<div style="font-size:13px;font-weight:600">'+escH(koukokuInfo.kName)+'</div>';
+  html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escH(koukokuInfo.kOrgCat)+(koukokuInfo.kDate?' ／ 公告日:'+escH(koukokuInfo.kDate):'')+'</div>';
+  html+='</div>';
+  // 発注予定案件リスト
+  html+='<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">紐付け先の発注予定工事を選択：</div>';
+  if(candidates.length===0){
+    html+='<div style="color:var(--warn);font-size:12px;padding:12px">同一発注機関内に紐付け可能な発注予定工事が見つかりません。</div>';
+  } else {
+    html+='<div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">';
+    for(const r of candidates){
+      const score=Math.round(simScore(r.name,koukokuInfo.kName)*100);
+      const scoreColor=score>=80?'#0f6e56':score>=60?'#ed7d31':'#8a8780';
+      html+='<label class="relink-candidate" style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;">';
+      html+='<input type="radio" name="relink-target" value="'+escH(r.id)+'" style="margin-top:3px;flex-shrink:0">';
+      html+='<div style="flex:1">';
+      html+='<div style="font-size:13px;font-weight:500">'+escH(r.name)+'</div>';
+      html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escH(r.orgCategory)+(r.period?' ／ '+escH(r.period):'')+'</div>';
+      html+='</div>';
+      html+='<span style="font-size:11px;font-weight:600;color:'+scoreColor+';flex-shrink:0">類似度 '+score+'%</span>';
+      html+='</label>';
+    }
+    html+='</div>';
+  }
+  html+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+  html+='<button class="btn" onclick="closeRelinkModal()">キャンセル</button>';
+  window._relinkInfo=koukokuInfo;
+  html+='<button class="btn btn-primary" onclick="confirmRelink()">🔗 紐付けする</button>';
+  html+='</div>';
+  html+='</div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+
+function confirmRelink(){
+  const e=window._relinkInfo||{};
+  const checked=document.querySelector('input[name="relink-target"]:checked');
+  if(!checked){showToast('紐付け先を選択してください','warn');return;}
+  const targetId=checked.value;
+  // candidatesオブジェクトを作ってスコア計算
+  const target=recs.find(r=>r.id===targetId);
+  if(!target){showToast('紐付け先が見つかりません','warn');return;}
+  const score=Math.round(simScore(target.name,e.kName)*100);
+  // _applyKoukokuLink形式でデータを構築
+  e.candidates=[{id:targetId,name:target.name,org:target.orgCategory,score}];
+  _applyKoukokuLink(e,targetId,'manual');
+  save();rebuild();
+  closeRelinkModal();
+  showToast('手動で紐付けしました：'+target.name,'success');
+}
+
+function closeRelinkModal(){
+  const m=document.getElementById('relinkModal');if(m)m.remove();
+}
+
+// 開札CSV照合の確定処理
+function _applyKaisatsuEntry(entry,targetId){
+  const target=recs.find(r=>r.id===targetId);
+  if(!target)return;
+  target._status='kaisatsu';
+  target._kaisatsuName=entry.kName;
+  target._kaisatsuDate=entry.kaisatsuDate;
+  target._keiyakuDate=entry.keiyakuDate;
+  target._koukokuDate=target._koukokuDate||entry.koukokuDate;
+  target._matchScore=entry.candidates.find(c=>c.id===targetId)?.score||0;
+  if(entry.kMethod)target.method=entry.kMethod;
+  if(entry.kScale&&!target.scale)target.scale=entry.kScale;
+  // 開札済移行時: 更新日は常に今日の日付
+  const td=new Date();target.date=td.getFullYear()+'/'+(String(td.getMonth()+1).padStart(2,'0'))+'/'+String(td.getDate()).padStart(2,'0');
+  entry.linkedId=targetId;entry.linkStatus='approved';
+}
+
+function closeKaisatsuModal(){const m=document.getElementById('kaisatsuApprovalModal');if(m)m.remove();}
+function kaisatsuBulkApprove(){document.querySelectorAll('.kaisatsu-radio-top').forEach(r=>{if(r.dataset.rank==='1')r.checked=true;});confirmKaisatsuApproval();}
+function confirmKaisatsuApproval(){
+  const modal=document.getElementById('kaisatsuApprovalModal');
+  if(!modal)return;
+  const entries=window._kaisatsuEntries||[];
+  let applied=0,skipped=0;
+  for(const entry of entries){
+    if(entry.linkStatus==='approved'&&entry.linkedId){
+      applied++;
+    } else {
+      const sel=document.querySelector('#kaisatsu-item-'+entry._idx+' input[name="kaisatsu-target-'+entry._idx+'"]:checked');
+      if(sel&&sel.value){
+        _applyKaisatsuEntry(entry,sel.value);applied++;
+      } else {
+        skipped++;
+      }
+    }
+  }
+  save();rebuild();
+  modal.remove();
+  showToast('開札CSV: '+applied+'件 反映・'+skipped+'件 スキップ','success');
+}
+
+function showKaisatsuApprovalModal(entries,unmatched,fname){
+  window._kaisatsuEntries=entries;
+  const autoCount=entries.filter(e=>e.autoApproved).length;
+  const pendCount=entries.filter(e=>!e.autoApproved).length;
+  let html='<div class="approval-modal" id="kaisatsuApprovalModal">';
+  html+='<div class="approval-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-size:16px;font-weight:600;color:var(--text)">🔨 開札CSV 紐付け承認</div>';
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escH(fname)+' — 自動確定：'+autoCount+'件 / 要確認：'+pendCount+'件</div></div>';
+  html+='<button onclick="closeKaisatsuModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  html+='<div style="margin-bottom:12px;display:flex;gap:8px">';
+  html+='<button class="btn" onclick="kaisatsuBulkApprove()" style="font-size:12px">⚡ 最高スコアで一括承認</button>';
+  html+='</div>';
+  html+='<div style="max-height:480px;overflow-y:auto">';
+  for(let i=0;i<entries.length;i++){
+    const e=entries[i];e._idx=i;
+    const isAuto=e.autoApproved;
+    html+='<div class="approval-item" id="kaisatsu-item-'+i+'" style="'+(isAuto?'opacity:0.7;background:#f0fdf4;border-color:#86efac':'')+'">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">';
+    html+='<div style="font-size:12px;font-weight:600;color:var(--text)">'+escH(e.kName)+'</div>';
+    html+='<div style="font-size:11px;color:var(--text3)">開札日:'+escH(e.kaisatsuDate)+(e.keiyakuDate?' / 契約日:'+escH(e.keiyakuDate):'')+(isAuto?' ✅ 自動確定':'')+'</div></div>';
+    if(!isAuto){
+      if(e.candidates.length>0){
+        html+='<div style="font-size:11px;color:var(--text3);margin-bottom:4px">紐付け先を選択（公告中案件）：</div>';
+        html+='<div style="border:1px solid var(--border);border-radius:6px;overflow:hidden">';
+        for(let j=0;j<e.candidates.length;j++){
+          const c=e.candidates[j];
+          const sc=c.score;
+          const scoreColor=sc>=80?'#0f6e56':sc>=60?'#ed7d31':'#8a8780';
+          html+='<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;">';
+          html+='<input type="radio" name="kaisatsu-target-'+i+'" value="'+escH(c.id)+'" class="kaisatsu-radio-top" data-rank="'+(j+1)+'"'+(j===0?' checked':'')+' style="flex-shrink:0">';
+          html+='<div style="flex:1"><div style="font-size:12px">'+escH(c.name)+'</div>';
+          html+='<div style="font-size:10px;color:var(--text3)">'+escH(c.org)+'</div></div>';
+          html+='<span style="font-size:11px;font-weight:600;color:'+scoreColor+'">'+sc+'%</span></label>';
+        }
+        html+='<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;">';
+        html+='<input type="radio" name="kaisatsu-target-'+i+'" value=""> <span style="font-size:12px;color:var(--text3)">スキップ</span></label>';
+        html+='</div>';
+      } else {
+        html+='<div style="font-size:12px;color:var(--warn)">公告中の候補なし — スキップ</div>';
+      }
+    } else {
+      const linked=recs.find(r=>r.id===e.linkedId);
+      if(linked)html+='<div style="font-size:11px;color:#0f6e56;padding:4px 8px;background:#f0fdf4;border-radius:4px">→ '+escH(linked.name)+'</div>';
+    }
+    html+='</div>';
+  }
+  html+='</div>';
+  // 未照合
+  if(unmatched.length){
+    html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
+    html+='<div style="font-size:12px;font-weight:600;color:var(--warn);margin-bottom:6px">⚠ 未照合（公告データなし・追加スキップ）</div>';
+    for(const u of unmatched){
+      html+='<div style="font-size:11px;color:var(--text2);padding:2px 0"><span style="color:var(--text3);margin-right:6px">'+escH(u.org)+'</span>'+escH(u.name)+'<span style="color:var(--text3);margin-left:6px">開札:'+escH(u.kaisatsuDate)+'</span></div>';
+    }
+    html+='</div>';
+  }
+  html+='<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+  html+='<button class="btn" onclick="closeKaisatsuModal()">キャンセル</button>';
+  html+='<button class="btn btn-primary" onclick="confirmKaisatsuApproval()">✅ 承認して反映</button>';
+  html+='</div></div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+
+function matchKaisatsu(data,header,fname){
+  const col=name=>header.findIndex(h=>h.includes(name));
+  const c_org=col('発注機関')>=0?col('発注機関'):0;
+  const c_name=col('工事名')>=0?col('工事名'):1;
+  const c_method=col('入札契約方式')>=0?col('入札契約方式'):col('入札方式')>=0?col('入札方式'):2;
+  const c_type=col('工事種別')>=0?col('工事種別'):3;
+  const c_koukokuDate=col('公告日')>=0?col('公告日'):4;
+  const c_kaisatsuDate=col('開札日')>=0?col('開札日'):5;
+  const c_keiyakuDate=col('契約日')>=0?col('契約日'):6;
+  const c_scale=col('発注規模')>=0?col('発注規模'):-1;
+
+  // 既に開札済の案件の工事名セット（再照合スキップ）
+  const alreadyKaisatsu=new Set(
+    recs.filter(r=>r._status==='kaisatsu')
+        .map(r=>(r._kaisatsuName||r._koukokuName||r.name).trim())
+  );
+
+  const entries=[],unmatched=[];
+  const THRESHOLD=0.62;
+
+  for(const row of data){
+    const kName=(row[c_name]||'').trim();
+    if(!kName)continue;
+    const kOrgRaw=(row[c_org]||'').trim();
+    const kOrgCat=orgCat(kOrgRaw.split(/[／/]/)[0].trim()||kOrgRaw);
+    const kaisatsuDate=(row[c_kaisatsuDate]||'').trim();
+    const keiyakuDate=(row[c_keiyakuDate]||'').trim();
+    const koukokuDate=(row[c_koukokuDate]||'').trim();
+    const kMethod=(row[c_method]||'').trim();
+    const kType=(row[c_type]||'').trim();
+    const kScale=c_scale>=0?(row[c_scale]||'').trim():'';
+
+    // 既に開札済はスキップ
+    if(alreadyKaisatsu.has(kName))continue;
+
+    // 公告中のみ候補
+    const candidates=recs
+      .filter(r=>r._status==='koukoku'&&r.orgCategory===kOrgCat)
+      .map(r=>({r,score:simScore(r._koukokuName||r.name,kName)}))
+      .filter(x=>x.score>=THRESHOLD)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,3)
+      .map(x=>({id:x.r.id,name:x.r._koukokuName||x.r.name,org:x.r.orgCategory,score:Math.round(x.score*100)}));
+
+    if(!candidates.length){
+      unmatched.push({name:kName,org:kOrgCat,kaisatsuDate});
+      continue;
+    }
+
+    const entry={kName,kOrgRaw,kOrgCat,kaisatsuDate,keiyakuDate,koukokuDate,kMethod,kType,kScale,
+      candidates,linkStatus:'pending',linkedId:null,autoApproved:false};
+
+    // 100%一致は自動確定
+    if(candidates[0].score>=100){
+      _applyKaisatsuEntry(entry,candidates[0].id);
+      entry.autoApproved=true;
+    }
+    entries.push(entry);
+  }
+
+  if(!entries.length&&!unmatched.length){
+    showToast('全件照合済みまたは対象なし','success');
+    return;
+  }
+  showKaisatsuApprovalModal(entries,unmatched,fname);
+}
+
+function showKaisatsuResult(matched,unmatched,fname){
+  let html='<div class="match-modal" id="matchModal" onclick="if(event.target.id===\'matchModal\')closeMatchModal()">';
+  html+='<div class="match-modal-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div style="font-size:15px;font-weight:600;color:var(--text)">🔨 開札CSV照合結果：'+escH(fname)+'</div>';
+  html+='<button onclick="closeMatchModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  html+='<div style="display:flex;gap:20px;margin-bottom:16px;font-size:13px">';
+  html+='<span style="color:var(--new)">✅ 照合成功 <strong>'+matched.length+'件</strong></span>';
+  html+='<span style="color:var(--warn)">⚠️ 未照合（新規追加） <strong>'+unmatched.length+'件</strong></span></div>';
+  if(matched.length){
+    html+='<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">照合済み（開札日・契約日付き）</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 36px 1fr 80px 80px;gap:4px;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;border-bottom:2px solid var(--border)">'+
+      '<div>発注予定名</div><div></div><div>開札工事名</div><div>開札日</div><div>契約日</div></div>';
+    for(const m of matched){
+      html+='<div style="display:grid;grid-template-columns:1fr 36px 1fr 80px 80px;gap:4px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">';
+      html+='<div style="color:var(--text2)">'+escH(m.old)+'<br><span style="font-size:10px;color:var(--text3)">'+escH(m.org)+'</span></div>';
+      html+='<div style="text-align:center;color:var(--accent)">→</div>';
+      html+='<div style="color:var(--text);font-weight:500">'+escH(m.newName)+'<span style="font-size:10px;color:var(--text3)"> ('+m.score+'%)</span></div>';
+      html+='<div style="color:var(--text2);font-size:11px">'+escH(m.kaisatsuDate)+'</div>';
+      html+='<div style="color:var(--new);font-size:11px">'+escH(m.keiyakuDate)+'</div>';
+      html+='</div>';
+    }
+  }
+  if(unmatched.length){
+    html+='<div style="font-size:12px;font-weight:600;color:var(--warn);margin:12px 0 6px">⚠ 未照合（公告データなし・追加スキップ）</div>';
+    for(const u of unmatched){
+      html+='<div style="font-size:12px;color:var(--text2);padding:3px 0">';
+      html+='<span style="font-size:10px;color:var(--text3);margin-right:6px">'+escH(u.org)+'</span>'+escH(u.name);
+      html+='<span style="font-size:10px;color:var(--text3);margin-left:8px">開札:'+escH(u.kaisatsuDate)+'</span>';
+      html+='</div>';
+    }
+  }
+  html+='<div style="margin-top:16px;text-align:right"><button class="btn btn-primary" onclick="closeMatchModal()">閉じる</button></div>';
+  html+='</div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+
+
+function showMatchResult(matched,unmatched,fname){
+  let html='<div class="match-modal" id="matchModal" onclick="if(event.target.id===\'matchModal\')closeMatchModal()">';
+  html+='<div class="match-modal-box">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div style="font-size:15px;font-weight:600;color:var(--text)">📢 公告CSV照合結果：'+escH(fname)+'</div>';
+  html+='<button onclick="closeMatchModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  html+='<div style="display:flex;gap:20px;margin-bottom:16px;font-size:13px">';
+  html+='<span style="color:var(--new)">✅ 照合成功 <strong>'+matched.length+'件</strong></span>';
+  html+='<span style="color:var(--warn)">⚠️ 未照合（新規追加） <strong>'+unmatched.length+'件</strong></span></div>';
+  if(matched.length){
+    html+='<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">照合済み（発注予定名 → 公告名）</div>';
+    for(const m of matched){
+      html+='<div class="match-row">';
+      html+='<div class="match-name-old">'+escH(m.old)+'</div>';
+      html+='<div class="match-arrow">→</div>';
+      html+='<div class="match-name-new">'+escH(m.newName)+'<span class="match-score"> ('+m.score+'%・'+escH(m.org)+')</span></div>';
+      html+='</div>';
+    }
+  }
+  if(unmatched.length){
+    html+='<div style="font-size:12px;font-weight:600;color:var(--warn);margin:12px 0 6px">未照合（新規公告として追加）</div>';
+    for(const u of unmatched){
+      html+='<div style="font-size:12px;color:var(--text2);padding:3px 0">';
+      html+='<span style="font-size:10px;color:var(--text3);margin-right:6px">'+escH(u.org)+'</span>'+escH(u.name);
+      html+='</div>';
+    }
+  }
+  html+='<div style="margin-top:16px;text-align:right"><button class="btn btn-primary" onclick="closeMatchModal()">閉じる</button></div>';
+  html+='</div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+function closeMatchModal(){const m=document.getElementById('matchModal');if(m)m.remove();}
+function escH(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function toggleDetailPanel(){
+  dpOpen=!dpOpen;
+  document.getElementById('detailBody').className='detail-panel-body'+(dpOpen?' open':'');
+  document.getElementById('detailToggle').textContent=dpOpen?'▲ 閉じる':'▼ 開く';
+}
+function parseBlock(text){
+  // マークダウン/連結形式を通常テキストに正規化
+  text=text.replace(/\[([^\]]*?)\]\([^)]+\)/g,'$1');
+  text=text.replace(/\x60{3}[\s\S]*?\x60{3}/g,s=>s.replace(/\x60{3}/g,''));// コードブロック除去
+  // 各ラベルの前に改行を、後ろにタブを挿入（既にある場合はスキップ）
+  ['工事種別／工事の業種','担当部・事務所','工事名称','工事場所','入札契約方式',
+   '発注規模','公告予定時期','公告予定年月','入札予定時期','WTO対象','ECI方式対象',
+   '一括審査方式対象','最終更新日時','工期','概要','その他','掲載月','留意事項','発注機関'
+  ].forEach(function(l){
+    var idx=text.indexOf(l);
+    if(idx<0)return;
+    // ラベルの直前が改行・タブでなければ改行を挿入
+    var cc=idx>0?text.charCodeAt(idx-1):10;
+    if(cc!==10&&cc!==9)text=text.slice(0,idx)+'\n'+text.slice(idx);
+    // ラベルの直後がタブ・空白でなければタブを挿入
+    var k=text.indexOf(l)+l.length;
+    var ck=k<text.length?text.charCodeAt(k):9;
+    if(ck!==9&&ck!==12288&&ck!==32)text=text.slice(0,k)+'\t'+text.slice(k);
+  });
+  const lblPat='工事種別|担当部|工事名称|工事場所|入札契約方式|発注規模|公告予定|入札予定|WTO対象|ECI方式|一括審査|最終更新|工期|概要|その他|掲載月|留意事項|発注機関';
+  const get=label=>{
+    // ラベルの直後がタブ+改行の場合は空（値なし）と判定
+    const m=text.match(new RegExp(label+'[\t　 ]+([^\t\n][^\n]*)'));
+    if(!m)return'';
+    let v=m[1].split(new RegExp(lblPat))[0].trim();
+    return/^[-－ー\s　]*$/.test(v)?'':v;
+  };
+  let name=get('工事名称')||get('工事名')||'';
+  // 水資源機構詳細形式: 「案件名称\n○○工事」
+  if(!name){
+    const nmM=text.match(/案件名称\n([^\n]+)/);
+    if(nmM)name=nmM[1].trim().replace(/\u3000/g,' ');
+  }
+  let duration=get('工期')||'';
+  let scale=get('発注規模')||'';
+  if(!scale){
+    const sm2=text.match(/[（(]工事発注規模[）)]\s*\n?\s*([^\n]+)/);
+    if(sm2)scale=sm2[1].trim();
+  }
+  if(!scale){
+    // 「その他」欄の「発注規模：約XX万円」パターン
+    const sm3=text.match(/発注規模[\t　 ]*[：:]\s*約?\s*([^\n]+)/);
+    if(sm3){
+      // 全角数字・カンマを正規化して金額文字列に変換
+      let raw3=sm3[1].trim().replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/，/g,',');
+      const m3=raw3.match(/([\d,]+)万円/);
+      if(m3){
+        const man=parseInt(m3[1].replace(/,/g,''),10);
+        if(man>=10000){const o=Math.floor(man/10000),r=man%10000;scale=r?o+'億'+r+'万円':o+'億円';}
+        else scale=man+'万円';
+      } else scale=raw3;
+    }
+  }
+  if(scale&&scale.includes('億円')){
+    scale=scale.replace(/([\d.]+)億円以上([\d.]+)億円未満/,(_,a,b)=>Math.round(+a*100)+'百万円以上'+Math.round(+b*100)+'百万円未満');
+    scale=scale.replace(/([\d.]+)億円未満/,(_,a)=>Math.round(+a*100)+'百万円未満');
+    scale=scale.replace(/([\d.]+)億円以上/,(_,a)=>Math.round(+a*100)+'百万円以上');
+  }
+  let place='';
+  const pm=text.match(/工事場所[	　 ]*([^\n]+)/);if(pm)place=pm[1].replace(/^自：/,'').trim();
+  let fiscalYear=0;
+  const ym=text.match(/掲載月[	　 ]*(\d{4})年(\d{2})月/);
+  if(ym){const y=+ym[1],mo=+ym[2];fiscalYear=mo>=4?y:y-1;}
+  const ym2=text.match(/公告予定年月[	　 ]*(\d{4})年(\d{2})月/);
+  if(ym2&&!fiscalYear){const y=+ym2[1],mo=+ym2[2];fiscalYear=mo>=4?y:y-1;}
+  const rm=name.match(/令和(\d+)年度/)||name.match(/R(\d+)/i);
+  if(rm){fiscalYear=+rm[1]+2018;}
+  let period=get('入札予定時期')||'';
+  if(period&&fiscalYear&&!/R\d/.test(period)&&!/\d{4}/.test(period)){
+    const rYear=fiscalYear-2018;
+    period='R'+rYear+' '+period;
+  }
+  // 開札日時からperiodを算出（入札予定時期が取れない場合、または公告詳細の場合は上書き）
+  const kaisatsuDateM=text.match(/開札日時[\t　 ]*(\d{4})年(\d{2})月(\d{2})日/);
+  if(kaisatsuDateM){
+    const ky=+kaisatsuDateM[1],km=+kaisatsuDateM[2];
+    const kFiscal=km>=4?ky:ky-1;
+    const kReiwa=kFiscal-2018;
+    const kQ=Math.floor(((km-4+12)%12)/3)+1;
+    const kPeriod='R'+kReiwa+' 第'+kQ+'四半期';
+    // 公告詳細には開札日時があるので常に上書き
+    period=kPeriod;
+  }
+  let summary='';
+  const sm=text.match(/概要[\s　]*\n([\s\S]*?)(?:\n[（(]工事発注規模|\nその他|\n掲載月|\n最終更新|$)/);
+  if(sm){summary=sm[1].replace(/^[\s　]+/gm,'').trim();}
+  else{
+    const lines=text.split('\n');
+    let idx=lines.findIndex(l=>/^概要/.test(l.trim()));
+    if(idx>=0){const ps=[];for(let i=idx+1;i<lines.length&&i<idx+25;i++){const l=lines[i].trim();if(/^[（(]工事発注規模|^その他|^掲載月|^最終更新|^内容に関する/.test(l))break;if(l)ps.push(l);}summary=ps.join('\n');}
+  }
+  // 落札者・落札価格（i-ppi入札の経過ページ or 水資源機構詳細ページ）
+  let rakusatsuSha=get('落札者名')||'';
+  let rakusatsuPrice=get('落札価格')||'';
+  // 水資源機構の開札詳細ページ形式（ラベル→次行が値）
+  if(!rakusatsuSha){
+    // 「落札業者名\n○○（株）（法人番号 ...）」形式
+    const shaM=text.match(/落札業者名\n([^\n]+)/);
+    if(shaM){
+      rakusatsuSha=shaM[1].trim().replace(/[（(]法人番号[^）)]*[）)]/g,'').trim();
+    }
+  }
+  if(!rakusatsuPrice){
+    // 「落札金額（消費税抜き）\n515,000,000円」形式
+    const priceM=text.match(/落札金額[（(]消費税抜き[）)]\n([^\n]+)/);
+    if(priceM){
+      let p=priceM[1].trim();
+      // 全角数字→半角
+      p=p.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/，/g,',');
+      const digits=p.replace(/[^\d]/g,'');
+      if(digits){
+        const man=Math.round(parseInt(digits)/10000);
+        rakusatsuPrice=man>=10000?(Math.floor(man/10000))+'億'+(man%10000?man%10000+'万円':'円')
+          :man+'万円';
+      }
+    }
+  }
+  // 価格の「（税抜き）」等を除去して数字だけ残す
+  if(rakusatsuPrice)rakusatsuPrice=rakusatsuPrice=rakusatsuPrice.replace(/（[^）]*）/g,'').replace(/[(（][^)）]*[)）]/g,'').trim();
+  let kaisatsuDateStr=get('開札日時')||get('開札日')||'';
+  // 水資源機構詳細形式: 「入札又は見積執行日時\n2026/02/10 10：01」
+  if(!kaisatsuDateStr){
+    const execM=text.match(/入札又は見積執行日時\n([^\n]+)/);
+    if(execM){const dm=execM[1].match(/(\d{4}\/\d{2}\/\d{2})/);if(dm)kaisatsuDateStr=dm[1];}
+  }
+  // 「2026年04月28日 10時15分」→「2026/04/28」
+  const kdm=kaisatsuDateStr.match(/(\d{4})年(\d{2})月(\d{2})日/);
+  if(kdm)kaisatsuDateStr=kdm[1]+'/'+kdm[2]+'/'+kdm[3];
+  let keiyakuDateStr=get('契約日')||'';
+  return{name,duration,scale,place,summary,period,fiscalYear,rakusatsuSha,rakusatsuPrice,kaisatsuDateStr,keiyakuDateStr};
+}
+function applyDetail(){
+  const raw=document.getElementById('detailTA').value.trim();
+  if(!raw){showToast('テキストが入力されていません','warn');return;}
+  const strip=n=>n.replace(/^(【[^】]*】\s*)+/,'').replace(/[\s　]+/g,'');
+  const blocks=raw.split(/(?=工事名称|案件名称)/);
+  let matched=0,notFound=[];
+  for(const blk of blocks){
+    if(!blk.trim())continue;
+    const info=parseBlock(blk);
+    if(!info.name)continue;
+    const nn=strip(info.name);
+    // recsのインデックスを直接使って確実に参照を得る
+    // r.nameと_koukokuName（公告工事名）の両方で照合
+    // exactマッチのみ（simScoreフォールバックは誤照合の原因になるため使用しない）
+    // 照合優先順: ①公告名(_koukokuName) ②発注予定名(name)
+    const idx=recs.findIndex(r=>{
+      if(r._koukokuName){const rk=strip(r._koukokuName);if(rk===nn||rk.includes(nn)||nn.includes(rk))return true;}
+      const rn=strip(r.name);
+      if(rn===nn||rn.includes(nn)||nn.includes(rn))return true;
+      return false;
+    });
+    if(idx>=0){
+      if(info.duration)recs[idx].duration=info.duration;
+      if(info.scale)recs[idx].scale=info.scale;
+      if(info.summary)recs[idx].summary=info.summary;
+      if(info.place)recs[idx].place=info.place;
+      if(info.period)recs[idx].period=info.period;
+      if(info.fiscalYear)recs[idx].fiscalYear=info.fiscalYear;
+      // 落札情報の反映
+      if(info.rakusatsuSha||info.rakusatsuPrice||info.kaisatsuDateStr){
+        if(recs[idx]._status==='koukoku'){
+          // 公告中 → 開札済に移行
+          if(info.rakusatsuSha){recs[idx].rakusatsuSha=info.rakusatsuSha;recs[idx]._status='kaisatsu';}
+          if(info.rakusatsuPrice)recs[idx].rakusatsuPrice=info.rakusatsuPrice;
+          if(info.kaisatsuDateStr)recs[idx]._kaisatsuDate=info.kaisatsuDateStr;
+          if(info.keiyakuDateStr)recs[idx]._keiyakuDate=info.keiyakuDateStr;
+          // 開札済移行時: 更新日は常に今日の日付
+          const tdK=new Date();recs[idx].date=tdK.getFullYear()+'/'+(String(tdK.getMonth()+1).padStart(2,'0'))+'/'+String(tdK.getDate()).padStart(2,'0');
+        } else if(recs[idx]._status==='kaisatsu'&&info.rakusatsuPrice){
+          // 開札済の場合: 公告名が100%一致する場合のみ落札金額を更新
+          const koukouName=(recs[idx]._koukokuName||recs[idx].name).trim();
+          const infoName=info.name.trim();
+          const stripK=n=>n.replace(/[\s\u3000　]+/g,'').replace(/令和\d+年度/g,'').replace(/R\d+/gi,'').replace(/^(【[^】]*】\s*)+/,'');
+          if(stripK(koukouName)===stripK(infoName)||stripK(recs[idx].name)===stripK(infoName)){
+            // 100%一致 → 落札金額・業者名を更新
+            if(info.rakusatsuPrice)recs[idx].rakusatsuPrice=info.rakusatsuPrice;
+            if(info.rakusatsuSha)recs[idx].rakusatsuSha=info.rakusatsuSha;
+            if(info.kaisatsuDateStr)recs[idx]._kaisatsuDate=info.kaisatsuDateStr;
+            if(info.keiyakuDateStr)recs[idx]._keiyakuDate=info.keiyakuDateStr;
+            // 落札金額反映日を更新日に設定（常に今日の日付）
+            const td=new Date();recs[idx].date=td.getFullYear()+'/'+(String(td.getMonth()+1).padStart(2,'0'))+'/'+String(td.getDate()).padStart(2,'0');
+          } else {
+            notFound.push(info.name+'（開札済・工事名不一致のためスキップ）');
+            continue;
+          }
+        } else {
+          // 発注予定・その他はスキップ（公告CSVで紐づけ後に開札情報を反映してください）
+          const statusLabel=!recs[idx]._status?'発注予定':recs[idx]._status;
+          notFound.push(info.name+'（'+statusLabel+'のため開札情報をスキップ。先に公告CSVで紐づけてください）');
+          continue;
+        }
+      }
+      ex.add(recs[idx].id);
+      matched++;
+    }else notFound.push(info.name);
+  }
+  save();rebuild();
+  if(matched>0){showToast(matched+'件の案件に詳細情報を反映しました','success');document.getElementById('detailTA').value='';}
+  if(notFound.length>0)showToast(notFound.length+'件は一覧に見つかりませんでした：'+notFound[0],'warn');
+  if(matched===0&&notFound.length===0)showToast('工事名称が見つかりませんでした','warn');
+}
+function rebuild(){updateStats();rebuildSidebar();rebuildFilters();applyFilters();}
+function updateStats(){
+  const tot=recs.length,nc=recs.filter(r=>!r._seen).length,dc=recs.filter(r=>r.summary||r.duration||r.scale).length;
+  const dates=recs.map(r=>r.date).filter(Boolean).sort().reverse();
+  const el_tot=document.getElementById('statTotal');if(el_tot)el_tot.textContent=tot;
+  const el_new=document.getElementById('statNew');if(el_new)el_new.textContent=nc;
+  const el_det=document.getElementById('statDetail');if(el_det)el_det.textContent=dc;
+  const el_dat=document.getElementById('statDate');if(el_dat)el_dat.textContent=dates[0]||'—';
+  const el_hdr=document.getElementById('headerTotal');if(el_hdr)el_hdr.textContent='累計 '+tot+'件';
+  const all_el=document.getElementById('cnt-all');if(all_el)all_el.textContent=tot;
+  const det_el=document.getElementById('cnt-detail');if(det_el)det_el.textContent=dc;
+  const yc=recs.filter(r=>r._status!=='koukoku'&&r._status!=='kaisatsu').length;
+  const yel=document.getElementById('cnt-yotei');if(yel)yel.textContent=yc;
+  const kc=recs.filter(r=>r._status==='koukoku').length;
+  const kel=document.getElementById('cnt-koukoku');if(kel)kel.textContent=kc;
+  const ksc=recs.filter(r=>r._status==='kaisatsu').length;
+  const ksel=document.getElementById('cnt-kaisatsu');if(ksel)ksel.textContent=ksc;
+  const jb=recs.filter(r=>r._judgment==='bid').length;
+  const jbel=document.getElementById('cnt-j-bid');if(jbel)jbel.textContent=jb;
+  const jp=recs.filter(r=>r._judgment==='pass').length;
+  const jpel=document.getElementById('cnt-j-pass');if(jpel)jpel.textContent=jp;
+  const jo=recs.filter(r=>r._judgment==='out').length;
+  const joel=document.getElementById('cnt-j-out');if(joel)joel.textContent=jo;
+}
+// ツリーの展開状態を保持
+if(typeof sidebarTreeState==='undefined')window.sidebarTreeState={};
+
+function rebuildSidebar(){
+  const oc={},pc={};
+  for(const r of recs){oc[r.orgCategory]=(oc[r.orgCategory]||0)+1;if(r.period){const pk=getPeriodKey(r.period);if(pk)pc[pk]=(pc[pk]||0)+1;}}
+  const ol=document.getElementById('orgList');ol.innerHTML='';
+
+  // ツリー定義: {label, key(省略時はlabel), children:[orgCategory文字列]}
+  const TREE=[
+    {label:'国土交通省',key:'mlit',children:['北海道開発局','東北地整','関東地整','北陸地整','中部地整','近畿地整','中国地整','四国地整','九州地整','国土技術政策研','官庁営繕部','国土交通省（他）']},
+    {label:'農林水産省',key:'maff',children:['農政：東北','農政：関東','農政：北陸','農政：東海','農政：近畿','農政：中国四国','農政：九州','農林水産省（他）']},
+    {label:'水資源機構',key:'suigen',children:null},// 動的に水資源機構：*を収集
+    {label:'内閣府・その他',key:'other',children:['内閣府','防衛省','国土交通省（他）','その他']},
+    {label:'地方公共団体',key:'local',children:null},// 動的に都道府県を収集
+  ];
+
+  // 動的グループ: 水資源機構・都道府県
+  const allOrgs=Object.keys(oc);
+  TREE[2].children=allOrgs.filter(o=>o.startsWith('水資源機構')).sort();
+  TREE[4].children=allOrgs.filter(o=>o.match(/^.{2,4}[都道府県]$/)).sort((a,b)=>b[1]-(oc[b]||0)+(oc[a]||0));
+
+  // 振り分けられたorgCategoryのSet
+  const assigned=new Set(TREE.flatMap(g=>g.children||[]));
+
+  function makeOrgItem(orgCat,count,isChild){
+    const active=cos.has(orgCat);
+    const d=document.createElement('div');
+    d.className='sidebar-item'+(active?' multi-active':'')+(isChild?' sidebar-child':'');
+    d.style.gap='6px';
+    const cb=document.createElement('input');
+    cb.type='checkbox';cb.checked=active;
+    cb.style.cssText='flex-shrink:0;cursor:pointer;accent-color:var(--accent)';
+    cb.addEventListener('change',e=>{e.stopPropagation();toggleOrg(orgCat);});
+    const sp=document.createElement('span');
+    sp.style.cssText='flex:1;white-space:normal;word-break:break-all;line-height:1.3;font-size:12px';
+    sp.textContent=orgCat.replace('水資源機構：','');
+    const cnt=document.createElement('span');
+    cnt.className='sidebar-count';cnt.textContent=count;
+    d.appendChild(cb);d.appendChild(sp);d.appendChild(cnt);
+    d.onclick=e=>{if(e.target===cb)return;toggleOrg(orgCat);};
+    return d;
+  }
+
+  function makeGroupHeader(group){
+    const children=(group.children||[]).filter(c=>oc[c]);
+    if(!children.length)return null;
+    const totalCount=children.reduce((s,c)=>s+(oc[c]||0),0);
+    const isOpen=sidebarTreeState[group.key]!==false;// デフォルト開く
+    const header=document.createElement('div');
+    header.className='sidebar-group-header';
+    const icon=document.createElement('span');
+    icon.className='toggle-icon';
+    icon.textContent=isOpen?'▼':'▶';
+    const label=document.createElement('span');
+    label.style.cssText='flex:1;font-size:11px';
+    label.textContent=group.label;
+    const cnt=document.createElement('span');
+    cnt.className='sidebar-count';cnt.style.cssText='font-size:10px;background:#e0ddd8';cnt.textContent=totalCount;
+    header.appendChild(icon);header.appendChild(label);header.appendChild(cnt);
+    // 子リスト
+    const childList=document.createElement('div');
+    childList.className='sidebar-group-children';
+    childList.style.display=isOpen?'block':'none';
+    for(const orgCat of children){
+      childList.appendChild(makeOrgItem(orgCat,oc[orgCat],true));
+    }
+    header.onclick=()=>{
+      const open=sidebarTreeState[group.key]!==false;
+      sidebarTreeState[group.key]=!open;
+      icon.textContent=open?'▶':'▼';
+      childList.style.display=open?'none':'block';
+    };
+    const wrap=document.createElement('div');
+    wrap.appendChild(header);wrap.appendChild(childList);
+    return wrap;
+  }
+
+  for(const group of TREE){
+    const wrap=makeGroupHeader(group);
+    if(wrap)ol.appendChild(wrap);
+  }
+
+  // どのグループにも属さないorgCategoryを「その他」に追加
+  const unassigned=allOrgs.filter(o=>!assigned.has(o)&&oc[o]);
+  if(unassigned.length){
+    for(const o of unassigned.sort())ol.appendChild(makeOrgItem(o,oc[o],false));
+  }
+  const pl=document.getElementById('periodList');pl.innerHTML='';
+  const po=['第1四半期','第2四半期','第3四半期','第4四半期'];
+  for(const [p,c] of Object.entries(pc).sort((a,b)=>(po.indexOf(a[0])||99)-(po.indexOf(b[0])||99))){
+    const d=document.createElement('div');d.className='sidebar-item'+(cp===p?' active':'');
+    d.innerHTML='<span>'+esc(p)+'</span><span class="sidebar-count">'+c+'</span>';
+    d.onclick=()=>{cp=cp===p?'':p;const pf=document.getElementById('periodFilter');if(pf)pf.value=cp;rebuildSidebar();applyFilters();};pl.appendChild(d);
+  }
+}
+function toggleOrg(o){if(cos.has(o))cos.delete(o);else cos.add(o);rebuildSidebar();applyFilters();}
+function getPeriodKey(p){const m=(p||'').match(/第\d四半期/);return m?m[0]:p;}
+function rebuildFilters(){
+  const LABEL_STYLE='display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer';
+  // 工事種別ドロップダウンを動的生成
+  const ts=[...new Set(recs.map(r=>r.type).filter(Boolean))].sort();
+  const tContainer=document.getElementById('typeDropdownItems');
+  if(tContainer){
+    const prev=getChecked('typeDropdown');
+    tContainer.innerHTML=ts.map(t=>'<label style="'+LABEL_STYLE+'"><input type="checkbox" value="'+esc(t)+'"'+(prev.includes(t)?' checked':'')+' onchange="applyMultiFilter()"> '+esc(t)+'</label>').join('');
+  }
+  // 予定時期ドロップダウンを動的生成
+  const periods=[...new Set(recs.map(r=>r.period).filter(Boolean))].sort((a,b)=>{
+    const pa=a.match(/(R\d+)\s*(第\d四半期)/),pb=b.match(/(R\d+)\s*(第\d四半期)/);
+    if(pa&&pb){if(pa[1]!==pb[1])return pa[1]<pb[1]?-1:1;return pa[2]<pb[2]?-1:1;}
+    return a.localeCompare(b,'ja');
+  });
+  const pContainer=document.getElementById('periodDropdownItems');
+  if(pContainer){
+    const prev=getChecked('periodDropdown');
+    pContainer.innerHTML=periods.map(p=>'<label style="'+LABEL_STYLE+'"><input type="checkbox" value="'+esc(p)+'"'+(prev.includes(p)?' checked':'')+' onchange="applyMultiFilter()"> '+esc(p)+'</label>').join('');
+  }
+  // 落札会社ドロップダウンを動的生成
+  const companies=[...new Set(recs.filter(r=>r.rakusatsuSha).map(r=>r.rakusatsuSha))].sort();
+  const rContainer=document.getElementById('rakusatsuDropdownItems');
+  if(rContainer){
+    const prev=getChecked('rakusatsuDropdown');
+    rContainer.innerHTML=companies.map(c=>'<label style="'+LABEL_STYLE+'"><input type="checkbox" value="'+esc(c)+'"'+(prev.includes(c)?' checked':'')+' onchange="applyRakusatsuFilter()"> '+esc(c)+'</label>').join('');
+  }
+}
+function applyRakusatsuFilter(){
+  const checked=getChecked('rakusatsuDropdown');
+  const total=document.querySelectorAll('#rakusatsuDropdown input[type=checkbox]').length;
+  const btn=document.getElementById('rakusatsuFilterBtn');
+  if(btn)btn.textContent=checked.length===0||checked.length===total?'落札会社：すべて ▾':'落札会社 ('+checked.length+') ▾';
+  applyFilters();
+}
+// onStatusFilterChange削除（ドロップダウン式に変更）
+// ─── 共通ドロップダウン ───────────────────────────────
+function toggleDropdown(id,e){
+  e.stopPropagation();
+  // 他のドロップダウンを閉じる
+  ['statusDropdown','judgmentDropdown','typeDropdown','periodDropdown','scaleDropdown'].forEach(did=>{
+    if(did!==id){const d=document.getElementById(did);if(d)d.style.display='none';}
+  });
+  const d=document.getElementById(id);
+  if(d)d.style.display=d.style.display==='none'?'block':'none';
+}
+document.addEventListener('click',()=>{
+  ['statusDropdown','judgmentDropdown','typeDropdown','periodDropdown','scaleDropdown'].forEach(id=>{
+    const d=document.getElementById(id);if(d)d.style.display='none';
+  });
+});
+function dropdownCheckAll(dropId,val){
+  document.querySelectorAll('#'+dropId+' input[type=checkbox]').forEach(cb=>cb.checked=val);
+  applyMultiFilter();
+}
+function getChecked(dropId){
+  return [...document.querySelectorAll('#'+dropId+' input:checked')].map(cb=>cb.value);
+}
+function updateBtnLabel(btnId,label,items,totalCount){
+  const btn=document.getElementById(btnId);
+  if(!btn)return;
+  const checked=items.filter(Boolean).length;
+  btn.textContent=checked===0||checked===totalCount?label+' ▾':label+' ('+checked+') ▾';
+}
+function applyMultiFilter(){
+  // ボタンラベル更新
+  const statusChecked=getChecked('statusDropdown');
+  const statusBtn=document.getElementById('statusFilterBtn');
+  if(statusBtn)statusBtn.textContent=statusChecked.length===0||statusChecked.length===4?'状態：すべて ▾':'状態 ('+statusChecked.length+') ▾';
+  const jChecked=getChecked('judgmentDropdown');
+  const jBtn=document.getElementById('judgmentFilterBtn');
+  if(jBtn)jBtn.textContent=jChecked.length===0||jChecked.length===4?'入札判定：すべて ▾':'入札判定 ('+jChecked.length+') ▾';
+  const tChecked=getChecked('typeDropdown');
+  const tTotal=document.querySelectorAll('#typeDropdown input[type=checkbox]').length;
+  const tBtn=document.getElementById('typeFilterBtn');
+  if(tBtn)tBtn.textContent=tChecked.length===0||tChecked.length===tTotal?'工事種別：すべて ▾':'工事種別 ('+tChecked.length+') ▾';
+  const pChecked=getChecked('periodDropdown');
+  const pTotal=document.querySelectorAll('#periodDropdown input[type=checkbox]').length;
+  const pBtn=document.getElementById('periodFilterBtn');
+  if(pBtn)pBtn.textContent=pChecked.length===0||pChecked.length===pTotal?'予定時期：すべて ▾':'予定時期 ('+pChecked.length+') ▾';
+  applyFilters();
+}
+// 発注規模フィルター
+function toggleScaleDropdown(e){
+  e.stopPropagation();
+  const d=document.getElementById('scaleDropdown');
+  d.style.display=d.style.display==='none'?'block':'none';
+}
+// scaleDropdownのcloseはtoggleDropdown内で処理
+function scaleCheckAll(val){
+  document.querySelectorAll('#scaleDropdown input[type=checkbox]').forEach(cb=>cb.checked=val);
+  applyScaleFilter();
+}
+function applyScaleFilter(){
+  const checked=[...document.querySelectorAll('#scaleDropdown input:checked')].map(cb=>cb.value);
+  const btn=document.getElementById('scaleFilterBtn');
+  if(checked.length===0||checked.length===7){
+    btn.textContent='発注規模：すべて ▾';
+  } else {
+    btn.textContent='発注規模：'+checked.length+'件選択 ▾';
+  }
+  applyFilters();
+}
+function getScaleMoku(r){
+  // 発注規模を百万円単位の数値に変換（scaleToMaxと同じロジック）
+  return scaleToMax(r.scale);
+}
+
+
+function setFilter(f,el){
+  if(window.innerWidth<=768)closeMobileMenu();
+  cf=f;document.querySelectorAll('[data-filter]').forEach(e=>e.classList.remove('active'));el.classList.add('active');
+  document.getElementById('activeLabel').textContent={all:'全件表示',yotei:'📋 発注予定',koukoku:'📢 公告中',kaisatsu:'🔨 開札済',detail:'📄 詳細あり'}[f]||'全件';
+  // statusFilterプルダウンも連動
+  const sf=document.getElementById('statusFilter');if(sf)sf.value=f;
+  applyFilters();
+}
+function applyFilters(){
+  const search=document.getElementById('searchInput').value.toLowerCase();
+  // マルチフィルター値取得
+  const statusChecked=getChecked('statusDropdown');
+  const jChecked=getChecked('judgmentDropdown');
+  const typeChecked=getChecked('typeDropdown');
+  const periodChecked=getChecked('periodDropdown');
+  const scaleChecked=getChecked('scaleDropdown');
+  // サイドバーフィルター(cf)との併用
+  let filtered=recs.filter(r=>{
+    // サイドバーフィルター
+    if(cf==='yotei'&&(r._status==='koukoku'||r._status==='kaisatsu'))return false;
+    if(cf==='koukoku'&&r._status!=='koukoku')return false;
+    if(cf==='kaisatsu'&&r._status!=='kaisatsu')return false;
+    if(cf==='detail'&&!r.summary&&!r.duration&&!r.scale)return false;
+    if(cf==='j-bid'&&r._judgment!=='bid')return false;
+    if(cf==='j-pass'&&r._judgment!=='pass')return false;
+    if(cf==='j-out'&&r._judgment!=='out')return false;
+    // 状態フィルター（複数選択）チェックが1つ以上ある場合のみ適用
+    const statusTotal=document.querySelectorAll('#statusDropdown input[type=checkbox]').length;
+    if(statusChecked.length>0&&statusChecked.length<statusTotal){
+      const ok=statusChecked.some(v=>{
+        if(v==='yotei')return r._status!=='koukoku'&&r._status!=='kaisatsu';
+        if(v==='koukoku')return r._status==='koukoku';
+        if(v==='kaisatsu')return r._status==='kaisatsu';
+        if(v==='detail')return !!(r.summary||r.duration||r.scale);
+        return false;
+      });
+      if(!ok)return false;
+    }
+    // 入札判定フィルター（複数選択）
+    if(jChecked.length>0){
+      const j=r._judgment||'';
+      const ok=jChecked.some(v=>{
+        if(v==='j-bid')return j==='bid';
+        if(v==='j-pass')return j==='pass';
+        if(v==='j-out')return j==='out';
+        if(v==='j-pending')return !j||j==='pending';
+        return false;
+      });
+      if(!ok)return false;
+    }
+    // 工事種別フィルター（複数選択）
+    if(typeChecked.length>0&&!typeChecked.includes(r.type||''))return false;
+    // 予定時期フィルター（複数選択）
+    if(periodChecked.length>0&&!periodChecked.includes(r.period||''))return false;
+    // 発注規模フィルター（複数選択）
+    if(scaleChecked.length>0&&scaleChecked.length<7){
+      const sv=scaleToMax(r.scale);
+      const inRange=scaleChecked.some(v=>{
+        if(v==='oku6+')return sv>=600;
+        if(v==='oku5-6')return sv>=500&&sv<600;
+        if(v==='oku4-5')return sv>=400&&sv<500;
+        if(v==='oku3-4')return sv>=300&&sv<400;
+        if(v==='oku2-3')return sv>=200&&sv<300;
+        if(v==='oku1-2')return sv>=100&&sv<200;
+        if(v==='oku1-')return sv>0&&sv<100;
+        return false;
+      });
+      if(!inRange)return false;
+    }
+    // 更新日フィルター
+    const dateRange=(document.getElementById('dateRangeFilter')||{}).value||'';
+    if(dateRange){
+      const now=new Date();now.setHours(23,59,59,999);
+      const cutoff=new Date();
+      if(dateRange==='1w')cutoff.setDate(cutoff.getDate()-7);
+      else if(dateRange==='2w')cutoff.setDate(cutoff.getDate()-14);
+      else if(dateRange==='1m')cutoff.setMonth(cutoff.getMonth()-1);
+      cutoff.setHours(0,0,0,0);
+      const rd=r.date?new Date(r.date.replace(/\//g,'-')+'T00:00:00'):null;
+      if(!rd||rd<cutoff)return false;
+    }
+    // 落札会社フィルター
+    const rakuChecked=getChecked('rakusatsuDropdown');
+    const rakuTotal=document.querySelectorAll('#rakusatsuDropdown input[type=checkbox]').length;
+    if(rakuChecked.length>0&&rakuChecked.length<rakuTotal){
+      const sha=r.rakusatsuSha||'';
+      const ok=rakuChecked.some(v=>v==='__none__'?!sha:v===sha);
+      if(!ok)return false;
+    }
+    // 発注者フィルター
+    if(cos.size>0&&!cos.has(r.orgCategory))return false;
+    // テキスト検索
+    if(search&&!r.name.toLowerCase().includes(search)&&!r.org.toLowerCase().includes(search)&&!(r.summary||'').toLowerCase().includes(search))return false;
+    return true;
+  });
+  filtered.sort((a,b)=>{
+    let av=a[sc]||'',bv=b[sc]||'';
+    if(sc==='period'){const o=['第1四半期','第2四半期','第3四半期','第4四半期'];av=o.indexOf(av);bv=o.indexOf(bv);if(av<0)av=99;if(bv<0)bv=99;}
+    // 落札会社: 未記載（空）は常に末尾
+    if(sc==='rakusatsuSha'){
+      if(!av&&bv)return 1;
+      if(av&&!bv)return -1;
+    }
+    if(av<bv)return sd==='asc'?-1:1;if(av>bv)return sd==='asc'?1:-1;return 0;
+  });
+  renderTable(filtered);
+  document.getElementById('resultCount').textContent=filtered.length+'件';
+}
+function sortBy(col){if(sc===col)sd=sd==='asc'?'desc':'asc';else{sc=col;sd='desc';}applyFilters();}
+function toggleRow(id){if(ex.has(id))ex.delete(id);else ex.add(id);applyFilters();}
+function toggleBid(id,e){
+  if(e)e.stopPropagation();
+  const rec=recs.find(r=>r.id===id);
+  if(!rec)return;
+  rec._bid=!rec._bid;
+  save();rebuild();
+}
+// 対象外ワードリスト（工事名にヒットしたら判定を「対象外」に自動設定）
+let EXCLUSION_WORDS=["GNSS", "J-PARC", "MTCA.4", "SPring", "SPring-8", "ごみ", "ごみ焼却工場", "ばいじん", "インターフェースボード", "インターロック", "エコセンター", "エコ・ポート", "エネルギー転換", "エレメント", "カートリッジ", "クリーンセンター", "クレーン設備", "タービン", "ダンピング", "ダンピングボックス", "チェーンコンベヤ", "パーソナルキー", "ブリッジ", "プラント", "ボイラ", "ボイラー", "ポンプ", "ポンプ場", "モノレール", "レインボーブリッジ", "ローリングリーフ", "上部工", "下水", "下水道", "交通安全", "位置情報", "供給電力", "処分場", "処理", "処理設備", "分離", "分離機", "制御", "動物園", "固化物", "固化物コンベヤ", "国土地理院", "塩化水素", "完工用", "庁舎電力", "廃棄物", "投入ホッパー", "排水施設", "摩耗板", "撹拌", "撹拌機", "撹拌装置", "攪拌機", "曝気", "最終処分場", "格子", "槽", "橋", "水再生", "水質", "汚泥", "浄化", "浄化センター", "浄水", "浄水場", "液中藻", "清掃", "清掃センター", "清掃工場", "濃縮", "濃縮スクリーン", "火山", "火山統合解析装置", "火格子", "灰出し", "炉", "焼却", "焼却施設", "焼却炉", "焼却設備", "燃焼", "監査廊昇降装置", "真空機器", "破砕", "破砕機", "破袋除袋機", "空調", "粗破砕機"];
+try{const saved=localStorage.getItem('exclusion_words');if(saved)EXCLUSION_WORDS=JSON.parse(saved);}catch(e){}
+function saveExclusionWords(){localStorage.setItem('exclusion_words',JSON.stringify(EXCLUSION_WORDS));}
+function isExclusionWord(name){
+  if(!name)return false;
+  return EXCLUSION_WORDS.some(w=>w&&name.includes(w));
+}
+function applyExclusionJudgments(){
+  // 全レコードを対象外ワードでチェックして判定を設定
+  let count=0;
+  recs.forEach(r=>{
+    if((r._judgment===null||r._judgment===undefined||r._judgment==='')&&isExclusionWord(r._koukokuName||r.name)){
+      r._judgment='out';count++;
+    }
+  });
+  if(count>0){save();rebuild();showToast(count+'件の工事を対象外に自動設定しました','success');}
+  return count;
+}
+// 既設ダム関連: 豊国工業・田原製作所・川崎重工業が納入したダムのリスト
+const KNOWN_DAM_LIST=["しろがね", "つづら", "ます渕", "一の木", "一庫", "七ケ宿", "七倉", "七北田", "七川", "七色", "三島", "三成", "三春", "三高（再）", "上磯", "下新冠", "下蚊屋", "世増", "世木", "中之条", "中山川逆調整地", "中筋川", "久吉", "九頭竜", "二居", "二風谷", "五和東部", "井川", "佐々並川", "佐久間", "佐幌", "元小屋", "入畑", "八ヶ川", "八田原製作所", "共和", "内川", "内村", "刈谷田川", "初瀬", "北富士", "北山", "十勝", "千丈ヶ原", "千頭", "南原", "厳木", "双珠別", "古梅", "合所", "合角", "吉田", "吉野谷", "四十四田", "城川", "塩原", "塩田調整池", "大井川", "大坊", "大宮", "大川", "大川瀬", "大松川", "大柿", "大洞", "大津", "大津岐", "大渡", "大石", "大舞", "大野", "大長見", "奥出", "奥新冠", "奥裾花", "宇奈月", "安富", "定山渓", "室生", "宮ノ川", "宮ヶ瀬", "宮下", "宮川", "宮床", "富村", "富郷", "寒河江", "寺内", "小仁熊", "小玉", "小田川", "小見野々", "小里川", "小阪部川", "屈足", "山の入", "山佐", "山口調整池", "山王海（再）", "山神", "山須原", "岩村", "岩瀬", "岩見", "川俣", "川内川第２", "川口", "布目", "平", "広沢", "庶路", "弥栄", "御所", "御部", "愛別", "我谷", "手取川", "打上", "新宮", "新豊根", "新鶴子", "日中", "日南", "早明浦", "旭川", "明神", "春別", "曲渕", "月山", "有間", "望来", "朝日", "朝里", "木屋川", "木川", "木都賀", "本庄川", "本郷", "本郷（再開発）", "札内川", "来島", "東郷", "松原", "松尾", "柳瀬", "柳谷", "栗山", "桐見", "椿山", "樋口", "横山", "樽床", "樽水", "歌野川", "武利", "水上", "水内", "水殿", "水窪", "汗見", "池原", "池田", "沓ヶ原", "沖田", "沼本", "浅瀬石川", "浜原", "浜田", "浜砂", "浦山", "浦河", "浪岡", "深山", "清水沢", "渡之瀬", "温井", "湯原", "湯谷川", "滝", "滝里", "漁川", "漆沢", "片倉", "片桐", "牛内", "牧尾", "犬鳴", "玉原", "玉川", "王泊", "瓜田", "生居川", "田万", "田代八重", "田原製作所", "田子倉", "田瀬", "白川", "白水川", "百谷", "目屋", "目谷", "相模", "真野", "石井", "石手川", "石渕", "砥山", "破間川", "祖山", "祝子川", "神代", "神居", "神谷", "秋神", "立花", "笹平", "管野", "糠平", "綾北", "綾里川", "緑", "緑川", "美生", "耶馬渓", "胎内川", "舟郡", "芦別", "花貫", "苫田", "荒川", "荒沢", "菅生", "萩形", "葛野川", "蓬莱", "蓮", "藤ノ平", "藤井川", "藤原", "行入", "西高尾", "見島", "角川", "豊平峡", "豊沢", "豊英", "赤瀬", "追立", "野崎", "野村", "野洲川", "金山", "金沢調整池", "釜房", "鏡", "長島", "長柄", "長谷", "門入", "阿井川", "阿木川", "陣屋", "雨山", "雨竜第一", "静内", "須川", "須田貝", "須賀川", "風屋", "高山", "高暮", "高柴", "高根第１", "高津戸", "高滝", "高見", "魚切", "魚梁瀬", "鳴子", "鳴淵", "鴨川", "鷲", "鹿ノ子", "鹿森", "黒又川第一", "黒部", "黒鳥", "龍ケ鼻"];
+function isKnownDamRelated(name){
+  if(!name)return false;
+  if(!name.includes('ダム'))return false;// ダムを含む工事名のみ判定
+  const n=name.replace(/[\s\u3000　]/g,'');
+  return KNOWN_DAM_LIST.some(dam=>{
+    const d=dam.replace(/[\s\u3000　]/g,'');
+    return d.length>=2&&n.includes(d);
+  });
+}
+// 判定ラベル設定
+const JUDGMENT_LABELS={
+  bid:{cls:'b-j-bid',label:'📌 入札予定'},
+  pass:{cls:'b-j-pass',label:'🚫 回避'},
+  out:{cls:'b-j-out',label:'⛔ 対象外'},
+  pending:{cls:'b-j-pending',label:'❓ 判定未了'}
+};
+function setJudgment(id,val,e){
+  if(e){e.stopPropagation();e.preventDefault();}
+  if(!window._fbUser){showToast('編集にはログインが必要です','warn');if(e&&e.target)e.target.value=window._lastJudgmentVal||'';return;}
+  const rec=recs.find(r=>r.id===id);
+  if(!rec)return;
+  // bid判定の場合は_bidフラグも連動
+  if(val==='bid')rec._bid=true;
+  else if(rec._judgment==='bid'&&val!=='bid')rec._bid=false;
+  rec._judgment=(val===''||val==='pending')?null:val;
+  save();rebuild();
+}
+function renderTable(data){
+  const tbody=document.getElementById('tableBody'),empty=document.getElementById('emptyState');
+  if(!data.length){
+    tbody.innerHTML='';empty.style.display='block';
+    empty.innerHTML=recs.length===0
+      ?'<div class="icon">📋</div><h3>CSVファイルを取り込んでください</h3><p>i-ppi.jpの検索結果CSVをドロップすると自動で整理・集約されます</p>'
+      :'<div class="icon">🔍</div><h3>条件に一致する案件がありません</h3>';
+    return;
+  }
+  empty.style.display='none';
+  const ob=cat=>cat.includes('地整')||cat.includes('開発局')||cat.includes('国土')?'b-kok':cat.includes('農政')||cat.includes('農林')?'b-nou':cat.includes('水資源機構')?'b-per':'b-oth';
+  const ss=s=>{if(!s)return'';if(s.includes('億円'))return s;return s.replace(/(\d+)百万円以上(\d+)百万円未満/,'$1〜$2百万円').replace(/百万円以上(\d+)百万円未満/,'〜$1百万円').replace('百万円以上','百万円+').replace('百万円未満','百万円未満');};
+  // 予定時期の表示：すでに年度付きならそのまま、fiscalYear or 工事名から抽出
+  const addYear=(r,period)=>{if(!period)return period;if(/R\d+\s/.test(period)||/\d{4}/.test(period))return period;if(r.fiscalYear){const ry=r.fiscalYear-2018;return'R'+ry+' '+period;}const m=(r.name||'').match(/令和(\d+)年度|R(\d+)/i);if(m){const y=m[1]||m[2];return'R'+y+' '+period;}return period;};
+  // 概要から工事内容（設備名等）を取得
+  const getOutline=r=>{
+    if(!r.summary)return'';
+    const lines=r.summary.split('\n').map(l=>l.trim()).filter(Boolean);
+    // 【...】や注釈行（余裕期間・試行工事など）をスキップして工事内容行を探す
+    const skipPat=/^【|^※|^余裕期間|^実工事期間|^注|^＊|^\*/;
+    // 工事内容らしい行：「○○　製作」「○○工　N式」「据付」「整備」「撤去」「設置」「修繕」を含む
+    const workPat=/製作|据付|整備|撤去|設置|修繕|工\s*[０-９0-9一二三四五六七八九十百千万１２３４５６７８９]+\s*[式門台本個所m]/;
+    for(const l of lines){
+      if(skipPat.test(l))continue;
+      if(workPat.test(l))return l.slice(0,80);
+    }
+    // workPatに引っかからなくても注釈以外の最初の行を返す
+    for(const l of lines){
+      if(!skipPat.test(l))return l.slice(0,80);
+    }
+    return'';
+  };
+  let h='';
+  for(const r of data){
+    const isN=!r._seen,hasDet=!!(r.summary||r.duration||r.scale),isO=ex.has(r.id);
+    const dept=r.org.includes('／')?r.org.split('／')[1].trim():'';
+    const outline=getOutline(r);
+    const periodDisp=addYear(r,r.period);
+    h+=`<tr class="${isN?'is-new':''}${r._bid?' bid-checked':''}${r._status==='koukoku'?' is-koukoku':''}${r._status==='kaisatsu'?' is-kaisatsu':''}" style="cursor:pointer" onclick="if(window.innerWidth<=768)toggleRow('${r.id}')">
+      <td><div class="tdi" style="padding:8px 4px 8px 8px;text-align:center"><button class="exp-btn${isO?' open':''}" onclick="event.stopPropagation();toggleRow('${r.id}')">▶</button></div></td>
+      <td><div class="tdi" style="text-align:center;padding:4px 2px"><select class="judgment-select j-${r._judgment||'none'}" onclick="event.stopPropagation()" onchange="setJudgment('${r.id}',this.value,event)" title="入札判定を設定">
+        <option value=""${!r._judgment||r._judgment==='pending'||(r._judgment==='')?'  selected':''}>―</option>
+        <option value="bid"${r._judgment==='bid'?' selected':''}>📌 入札予定</option>
+        <option value="pass"${r._judgment==='pass'?' selected':''}>🚫 回避</option>
+        <option value="out"${r._judgment==='out'?' selected':''}>⛔ 対象外</option>
+      </select><span class="mobile-judgment-label" style="font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px">${r._judgment==='bid'?'📌 入札予定':r._judgment==='pass'?'🚫 回避':r._judgment==='out'?'⛔ 対象外':'―'}</span>${r._smpRank?'<div style="font-size:10px;color:var(--text3);margin-top:1px">'+esc(r._smpRank)+'</div>':''}</div></td>
+      <td><div class="tdi" style="text-align:center"><span class="badge ${r._status==='kaisatsu'?'b-kaisatsu':r._status==='koukoku'?'b-koukoku':isN?'b-new':'b-seen'}">${r._status==='kaisatsu'?'開札済':r._status==='koukoku'?'公告中':isN?'新着':'既読'}</span>${hasDet?'<br><span class="badge b-det" style="margin-top:3px;font-size:10px">詳細</span>':''}</div></td>
+      <td title="${esc(r.org)}"><div class="tdi" style="overflow:hidden"><span class="badge ${ob(r.orgCategory)}" style="font-size:10px;margin-bottom:3px;display:inline-block;max-width:215px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.orgCategory)}">${esc(r.orgCategory)}</span><br><span style="font-size:11px;color:var(--text3);word-break:break-all;white-space:normal;line-height:1.3">${esc(dept)}</span></div></td>
+      <td data-label="工事名"><div class="tdi" style="white-space:normal;line-height:1.4;word-break:break-all">${r._koukokuName?'<div style="font-weight:500">'+esc(r._koukokuName)+'</div><div style="font-size:11px;color:var(--text3);margin-top:1px">発注予定名：'+esc(r.name)+'</div>':esc(r.name)}${r._status==='kaisatsu'?'<div style="font-size:11px;color:#0f6e56;margin-top:2px">🔨 開札:'+esc(r._kaisatsuDate||'')+(r._keiyakuDate?' ／ 契約:'+esc(r._keiyakuDate):'')+(r.rakusatsuSha?'<br>🏆 '+esc(r.rakusatsuSha)+(r.rakusatsuPrice?' '+esc(r.rakusatsuPrice)+'円':''):'')+'</div>':((r._status==='koukoku'||r._status==='kaisatsu')&&r._koukokuName?'<div style="font-size:11px;color:#1a4fa0;margin-top:2px">📢 '+esc(r._koukokuName)+'<span class="badge b-link-'+(r._linkStatus||'approved')+'" style="font-size:10px;margin-left:6px">'+(r._linkStatus==='manual'?'手動設定':r._linkStatus==='none'?'未紐付':'承認済')+'</span></div>':'')}${outline?'<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.4">'+esc(outline)+'</div>':''}${isKnownDamRelated(r._koukokuName||r.name)?'<div style="margin-top:3px"><span style="font-size:10px;background:#e8f4ff;color:#1a4fa0;border:1px solid #a8c8f0;border-radius:3px;padding:1px 5px">🏛 既設ダム関連</span></div>':''}</div></td>
+      <td><div class="tdi" style="font-size:12px;color:var(--text2);line-height:1.4;font-weight:500;word-break:break-all;white-space:normal">${esc(ss(r.scale))}</div></td>
+      <td><div class="tdi" style="font-size:12px;color:var(--text2)">${esc(r.duration)}</div></td>
+      <td><div class="tdi" style="font-size:12px;color:var(--text2)">${esc(r.method)}</div></td>
+      <td><div class="tdi"><span class="badge b-oth" style="font-size:11px">${esc(r.type)}</span></div></td>
+      <td><div class="tdi"><span class="badge b-per" style="white-space:normal;text-align:center;line-height:1.4">${esc(periodDisp)}</span></div></td>
+      <td><div class="tdi" style="font-size:12px;color:var(--text3)">${esc(r.date)}</div></td>
+    </tr>`;
+    if(isO){h+=`<tr class="det-row${isN?' is-new':''}"><td colspan="10"><div class="tdi">
+      <div class="det-box">
+        <div class="det-item"><div class="lbl">発注機関</div><div class="val">${esc(r.org.split('／')[0].trim())}</div></div>
+        <div class="det-item"><div class="lbl">担当部・事務所</div><div class="val">${esc(dept||'—')}</div></div>
+        <div class="det-item"><div class="lbl">工事場所</div><div class="val">${esc(r.place||'—')}</div></div>
+        <div class="det-item"><div class="lbl">発注規模</div><div class="val">${esc(r.scale||'—')}</div></div>
+        <div class="det-item"><div class="lbl">工期</div><div class="val">${esc(r.duration||'—')}</div></div>
+        <div class="det-item"><div class="lbl">入札契約方式</div><div class="val">${esc(r.method||'—')}</div></div>
+        ${(r._status==='koukoku'||r._status==='kaisatsu')?`<div class="det-item"><div class="lbl">公告紐付け状態</div><div class="val"><span class="badge b-link-${r._linkStatus||'approved'}" style="margin-right:6px">${r._linkStatus==='manual'?'🔧 手動設定':r._linkStatus==='none'?'未紐付け':'✅ 承認済'}</span>${r._koukokuDate?'公告日: '+esc(r._koukokuDate):''}</div></div><div class="det-item"><div class="lbl">紐付け操作</div><div class="val" style="display:flex;gap:6px;flex-wrap:wrap">${r._status==='kaisatsu'?'<button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="unlinkKoukoku(\''+r.id+'\')" title="開札情報を削除して公告中に戻します">🔓 開札情報を解除</button>':'<button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="unlinkKoukoku(\''+r.id+'\')" title="公告紐付けを解除して発注予定に戻します">🔓 解除して再紐付け</button>'}</div></div>`:''}
+        <div class="det-item full"><div class="lbl">概要</div>${r.summary?'<div class="val summ">'+esc(r.summary)+'</div>':'<div class="no-det">詳細ページのテキストを貼り付けると表示されます</div>'}</div>
+        ${r.rakusatsuSha?'<div class="det-item"><div class="lbl" style="color:#0f6e56">🔨 落札者</div><div class="val" style="font-weight:600">'+esc(r.rakusatsuSha)+'</div></div>':''}
+        ${r.rakusatsuPrice?'<div class="det-item"><div class="lbl" style="color:#0f6e56">落札価格</div><div class="val" style="font-weight:600;color:#0f6e56">'+esc(r.rakusatsuPrice)+'円（税抜）</div></div>':''}
+        ${r._kaisatsuDate?'<div class="det-item"><div class="lbl">開札日</div><div class="val">'+esc(r._kaisatsuDate)+'</div></div>':''}
+        ${r._keiyakuDate?'<div class="det-item"><div class="lbl">契約日</div><div class="val">'+esc(r._keiyakuDate)+'</div></div>':''}
+      </div>
+    </div></td></tr>`;}
+
+  }
+  tbody.innerHTML=h;
+}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function clearAll(){
+  // 確認モーダル表示
+  const overlay=document.createElement('div');
+  overlay.id='clearConfirmOverlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML=`
+    <div style="background:var(--surface);border-radius:12px;padding:28px 32px;width:380px;box-shadow:0 8px 40px rgba(0,0,0,0.25)">
+      <div style="font-size:18px;font-weight:700;color:#c0392b;margin-bottom:8px">⚠️ データの完全削除</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.6">
+        取り込んだ全データ・詳細情報・紐付け情報がすべて削除されます。<br>
+        <strong>この操作は元に戻せません。</strong>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">
+        実行する場合は <code style="background:#fee;padding:2px 6px;border-radius:4px;color:#c0392b;font-weight:700">suishin</code> と入力してください
+      </div>
+      <input id="clearConfirmInput" type="text" placeholder="suishin と入力"
+        style="width:100%;box-sizing:border-box;padding:10px 12px;border:2px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:16px;outline:none"
+        oninput="document.getElementById('clearConfirmBtn').disabled=this.value!=='suishin'"
+        onkeydown="if(event.key==='Enter'&&this.value==='suishin')execClearAll()">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn" onclick="document.getElementById('clearConfirmOverlay').remove()">キャンセル</button>
+        <button id="clearConfirmBtn" class="btn btn-danger" disabled onclick="execClearAll()"
+          style="opacity:0.5;cursor:not-allowed" 
+          oninput="">🗑 削除する</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // ボタンのstyle連動
+  document.getElementById('clearConfirmInput').addEventListener('input',function(){
+    const btn=document.getElementById('clearConfirmBtn');
+    const ok=this.value==='suishin';
+    btn.disabled=!ok;
+    btn.style.opacity=ok?'1':'0.5';
+    btn.style.cursor=ok?'pointer':'not-allowed';
+  });
+  setTimeout(()=>document.getElementById('clearConfirmInput').focus(),50);
+}
+function execClearAll(){
+  const overlay=document.getElementById('clearConfirmOverlay');
+  if(overlay)overlay.remove();
+  recs=[];seen=new Set();co='';cp='';
+  localStorage.removeItem(SK);localStorage.removeItem(SEK);
+  localStorage.removeItem('nyusatsu_pending_koukoku');
+  // Firebaseもクリア
+  if(window._fbReady&&window._fbDb){
+    const db=window._fbDb,r=window._fbRef,s=window._fbSet;
+    s(r(db,'anken/recs'),'[]').catch(()=>{});
+    s(r(db,'anken/seen'),'[]').catch(()=>{});
+    s(r(db,'anken/pending'),'[]').catch(()=>{});
+    s(r(db,'anken/lastUpdate'),new Date().toISOString()).catch(()=>{});
+  }
+  document.getElementById('importResult').classList.remove('show');
+  rebuild();showToast('データをクリアしました');
+}
+function exportCSV(){
+  if(!recs.length){showToast('データがありません','warn');return;}
+  const h=['状態','地整カテゴリ','発注機関','担当部・事務所','工事名','発注規模','工期','入札契約方式','工事種別','入札予定時期','更新日','工事場所','概要'];
+  const rows=recs.map(r=>{
+    const org=r.org.split('／')[0].trim(),dept=r.org.includes('／')?r.org.split('／')[1].trim():'';
+    return[r._seen?'既読':'新着',r.orgCategory,org,dept,r.name,r.scale,r.duration,r.method,r.type,r.period,r.date,r.place,(r.summary||'').replace(/\n/g,' ')].map(v=>'"'+(v||'').replace(/"/g,'""')+'"').join(',');
+  });
+  const csv='\uFEFF'+[h.join(','),...rows].join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='nyusatsu_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  showToast('CSVを出力しました');
+}
+function showToast(msg,type=''){
+  const t=document.getElementById('toast');t.textContent=msg;
+  t.className='toast show'+(type?' '+type:'');
+  setTimeout(()=>t.classList.remove('show'),3500);
+}
+// --- Chart ---
+const PERIODS=['第1四半期','第2四半期','第3四半期','第4四半期'];
+const PERIOD_COLORS=['#4472c4','#ed7d31','#70ad47','#ffc000'];
+function scaleToMax(s){
+  // 発注規模を百万円単位の最大値で返す
+  if(!s)return 0;
+  function parseAmt(t){
+    t=t.trim();
+    var m;
+    m=t.match(/([\d.]+)億([\d,]+)万円/);if(m)return +m[1]*100 + +m[2].replace(/,/g,'')/100;
+    m=t.match(/([\d.]+)億円?/);if(m)return +m[1]*100;
+    m=t.match(/([\d,]+)万円/);if(m)return +m[1].replace(/,/g,'')/100;
+    m=t.match(/([\d,]+)百万円/);if(m)return +m[1].replace(/,/g,'');
+    return 0;
+  }
+  // A以上B未満 → Bが最大値
+  var m2=s.match(/^(.+)以上(.+)未満$/);if(m2)return parseAmt(m2[2]);
+  // B未満 → Bが最大値
+  var m3=s.match(/^(.+)未満$/);if(m3)return parseAmt(m3[1]);
+  // A以上 → Aを最大値
+  var m4=s.match(/^(.+)以上$/);if(m4)return parseAmt(m4[1]);
+  // 「3億円」「2億5000万円」など単体の金額表記 → そのまま使用
+  var m5=parseAmt(s);if(m5>0)return m5;
+  return 0;
+}
+function showChart(){
+  if(!recs.length){showToast('データがありません','warn');return;}
+  document.getElementById('chartModal').style.display='block';
+  // 発注者をツリーグループで構築（サイドバーと同じ分類）
+  const orgSet=new Set(recs.map(r=>r.orgCategory).filter(Boolean));
+  const CHART_GROUPS=[
+    {label:'国土交通省',children:['北海道開発局','東北地整','関東地整','北陸地整','中部地整','近畿地整','中国地整','四国地整','九州地整','国土技術政策研','官庁営繕部','国土交通省（他）']},
+    {label:'農林水産省',children:['農政：東北','農政：関東','農政：北陸','農政：東海','農政：近畿','農政：中国四国','農政：九州','農林水産省（他）']},
+    {label:'水資源機構',children:[...orgSet].filter(o=>o.startsWith('水資源機構')).sort()},
+    {label:'内閣府・その他',children:['内閣府','防衛省','その他']},
+    {label:'地方公共団体',children:[...orgSet].filter(o=>o.match(/^.{2,4}[都道府県]$/)).sort()},
+  ];
+  const assigned=new Set(CHART_GROUPS.flatMap(g=>g.children));
+  const unassigned=[...orgSet].filter(o=>!assigned.has(o));
+  if(unassigned.length)CHART_GROUPS.push({label:'その他',children:unassigned});
+
+  const list=document.getElementById('chartOrgList');
+  list.innerHTML='';
+
+  CHART_GROUPS.forEach(group=>{
+    const activeChildren=group.children.filter(o=>orgSet.has(o));
+    if(!activeChildren.length)return;
+    // グループヘッダ
+    const grpDiv=document.createElement('div');
+    grpDiv.style.cssText='width:100%;margin-top:6px;margin-bottom:2px;';
+    const grpLabel=document.createElement('label');
+    grpLabel.style.cssText='display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--text3);padding:2px 6px;cursor:pointer;';
+    const grpCb=document.createElement('input');
+    grpCb.type='checkbox';grpCb.checked=true;
+    grpCb.style.cssText='cursor:pointer;accent-color:var(--accent)';
+    grpCb.addEventListener('change',e=>{
+      const checked=e.target.checked;
+      grpDiv.querySelectorAll('input[type=checkbox][data-org]').forEach(cb=>{cb.checked=checked;});
+      drawChart();
+    });
+    grpLabel.appendChild(grpCb);
+    grpLabel.appendChild(document.createTextNode(group.label));
+    grpDiv.appendChild(grpLabel);
+    // 子アイテム
+    const childWrap=document.createElement('div');
+    childWrap.style.cssText='display:flex;flex-wrap:wrap;gap:4px;padding-left:12px;';
+    activeChildren.forEach(org=>{
+      const label=document.createElement('label');
+      label.style.cssText='display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px;cursor:pointer;white-space:nowrap;';
+      const cb=document.createElement('input');
+      cb.type='checkbox';cb.value=org;cb.checked=true;
+      cb.dataset.org=org;
+      cb.addEventListener('change',drawChart);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(org.replace('水資源機構：','')));
+      childWrap.appendChild(label);
+    });
+    grpDiv.appendChild(childWrap);
+    list.appendChild(grpDiv);
+  });
+  drawChart();
+}
+function chartSelAll(val){
+  document.querySelectorAll('#chartOrgList input[type=checkbox]').forEach(cb=>cb.checked=val);
+  drawChart();
+}
+function closeChart(){document.getElementById('chartModal').style.display='none';}
+function drawChart(){
+  const mode=document.getElementById('chartMode').value;
+  const sf=document.getElementById('chartScaleFilter').value;
+  const bidBid=document.getElementById('chartBidBid')?.checked;
+  const bidPass=document.getElementById('chartBidPass')?.checked;
+  const bidOut=document.getElementById('chartBidOut')?.checked;
+  const anyJudge=bidBid||bidPass||bidOut;
+  // チェックされた発注者のみ抽出
+  // data-org属性のあるチェックボックスのみ（グループ親チェックは除外）
+  const checkedOrgs=new Set([...document.querySelectorAll('#chartOrgList input[data-org]:checked')].map(cb=>cb.value));
+  // 状態フィルター（チェックボックスで複数選択）
+  const csYotei=document.getElementById('chartStatusYotei')?.checked;
+  const csKoukoku=document.getElementById('chartStatusKoukoku')?.checked;
+  const csKaisatsu=document.getElementById('chartStatusKaisatsu')?.checked;
+  const anyStatus=csYotei||csKoukoku||csKaisatsu;
+  let data=(checkedOrgs.size>0?recs.filter(r=>checkedOrgs.has(r.orgCategory)):recs);
+  if(anyStatus){data=data.filter(r=>{
+    const st=r._status||'';
+    if(csYotei&&st!=='koukoku'&&st!=='kaisatsu')return true;
+    if(csKoukoku&&st==='koukoku')return true;
+    if(csKaisatsu&&st==='kaisatsu')return true;
+    return false;
+  });}
+  if(sf==='miman')data=data.filter(r=>(r.scale||'').includes('未満'));
+  // 判定フィルター（複数選択）
+  if(anyJudge){data=data.filter(r=>{
+    if(bidBid&&r._judgment==='bid')return true;
+    if(bidPass&&r._judgment==='pass')return true;
+    if(bidOut&&r._judgment==='out')return true;
+    return false;
+  });}
+
+  // X軸: チェックされた発注者（チェックなしなら全発注者）
+  const orgOrder=['北海道開発局','東北地整','関東地整','北陸地整','中部地整','近畿地整','中国地整','四国地整','九州地整'];
+  const orgs=(checkedOrgs.size>0?[...checkedOrgs]:[...new Set(recs.map(r=>r.orgCategory).filter(Boolean))]).sort((a,b)=>{
+    const ai=orgOrder.indexOf(a),bi=orgOrder.indexOf(b);
+    if(ai>=0&&bi>=0)return ai-bi;if(ai>=0)return -1;if(bi>=0)return 1;return a.localeCompare(b,'ja');
+  });
+
+  // 各orgの合計が0のものをX軸から除外
+  const orgTotals=orgs.map(org=>PERIODS.reduce((sum,p)=>{
+    const sub=data.filter(r=>r.orgCategory===org&&getPeriodKey(r.period)===p);
+    return sum+(mode==='count'?sub.length:sub.reduce((s,r)=>s+scaleToMax(r.scale),0));
+  },0));
+  const orgsWithData=orgs.filter((_,i)=>orgTotals[i]>0);
+  // 0件なら警告
+  if(orgsWithData.length<orgs.length){orgs.length=0;orgsWithData.forEach(o=>orgs.push(o));}
+  if(!orgs.length){
+    const canvas=document.getElementById('chartCanvas');
+    const ctx=canvas.getContext('2d');
+    canvas.width=canvas.offsetWidth||880;canvas.height=420;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#8a8780';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText('データがありません',canvas.width/2,210);
+    return;
+  }
+
+  // 年度タブ構築
+  const yearSet1=new Set();
+  data.forEach(r=>{const m=(r.period||'').match(/R(\d+)/);if(m)yearSet1.add('R'+m[1]);});
+  const years1=[...yearSet1].sort();
+  const tabCont1=document.getElementById('chartYearTabs1');
+  if(tabCont1){
+    if(!window._chartYear1||(years1.length&&!years1.includes(window._chartYear1)))
+      window._chartYear1='';
+    tabCont1.innerHTML='';
+    const mkTab=(label,val)=>{
+      const btn=document.createElement('button');
+      btn.textContent=label;
+      const active=window._chartYear1===val;
+      btn.style.cssText='padding:3px 10px;border-radius:4px;border:1px solid var(--border);font-size:12px;cursor:pointer;'+(active?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text2);');
+      btn.onclick=()=>{window._chartYear1=val;drawChart();};
+      tabCont1.appendChild(btn);
+    };
+    mkTab('全年度','');
+    years1.forEach(y=>mkTab(y,y));
+  }
+  // 選択年度でデータ絞込
+  if(window._chartYear1){data=data.filter(r=>(r.period||'').includes(window._chartYear1));}
+
+  const datasets=PERIODS.map((p,pi)=>({
+    label:p,
+    data:orgs.map(org=>{
+      const sub=data.filter(r=>r.orgCategory===org&&getPeriodKey(r.period)===p);
+      if(mode==='count')return sub.length;
+      return sub.reduce((s,r)=>s+scaleToMax(r.scale),0);
+    }),
+    color:PERIOD_COLORS[pi]
+  }));
+
+  const canvas=document.getElementById('chartCanvas');
+  const ctx=canvas.getContext('2d');
+  const W=canvas.offsetWidth||880,H=440;
+  canvas.width=W;canvas.height=H;
+  ctx.clearRect(0,0,W,H);
+
+  const PAD={top:24,right:24,bottom:160,left:mode==='count'?52:80};
+  const chartW=W-PAD.left-PAD.right,chartH=H-PAD.top-PAD.bottom;
+  const groupW=chartW/orgs.length;
+  const barW=Math.min(groupW*0.8/PERIODS.length,26);
+
+  // Y axis: count=auto, scale=10(百万)〜1000(百万)=0.1億〜10億
+  let minVal,maxVal,logScale=false;
+  if(mode==='count'){
+    minVal=0;maxVal=0;
+    for(const ds of datasets)for(const v of ds.data)if(v>maxVal)maxVal=v;
+    if(!maxVal)maxVal=5;
+    maxVal=Math.ceil(maxVal/5)*5;
+  }else{
+    minVal=50;maxVal=5000;// 百万円単位: 50=5千万, 5000=50億（固定）
+    logScale=true;
+  }
+
+  // helper: value→y pixel (log scale for amount)
+  const val2y=v=>{
+    if(!logScale)return PAD.top+chartH-(v/maxVal)*chartH;
+    if(v<=0)return PAD.top+chartH;
+    const logMin=Math.log10(minVal),logMax=Math.log10(maxVal);
+    const logV=Math.log10(Math.max(v,minVal));
+    return PAD.top+chartH-((logV-logMin)/(logMax-logMin))*chartH;
+  };
+
+  // grid & y-axis labels
+  ctx.strokeStyle='#e0ddd5';ctx.lineWidth=1;
+  if(!logScale){
+    const ticks=5;
+    for(let i=0;i<=ticks;i++){
+      const v=maxVal*i/ticks;
+      const y=val2y(v);
+      ctx.beginPath();ctx.moveTo(PAD.left,y);ctx.lineTo(PAD.left+chartW,y);ctx.stroke();
+      ctx.fillStyle='#8a8780';ctx.font='11px sans-serif';ctx.textAlign='right';
+      ctx.fillText(Math.round(v),PAD.left-6,y+4);
+    }
+  }else{
+    // log grid: 10,20,50,100,200,500,1000 百万円
+    const gridVals=[50,100,200,500,1000,2000,5000];
+    const gridLabels=['5千万','1億','2億','5億','10億','20億','50億'];
+    for(let i=0;i<gridVals.length;i++){
+      const y=val2y(gridVals[i]);
+      ctx.beginPath();ctx.moveTo(PAD.left,y);ctx.lineTo(PAD.left+chartW,y);
+      ctx.strokeStyle=i===0||i===gridVals.length-1?'#ccc9c0':'#e0ddd5';ctx.stroke();
+      ctx.fillStyle='#8a8780';ctx.font='11px sans-serif';ctx.textAlign='right';
+      ctx.fillText(gridLabels[i],PAD.left-6,y+4);
+    }
+    ctx.strokeStyle='#e0ddd5';
+  }
+
+  // bars
+  for(let gi=0;gi<orgs.length;gi++){
+    const gx=PAD.left+gi*groupW;
+    const totalBarsW=PERIODS.length*barW;
+    const startX=gx+(groupW-totalBarsW)/2;
+    for(let pi=0;pi<PERIODS.length;pi++){
+      const v=datasets[pi].data[gi];
+      if(v<=0)continue;
+      const bx=startX+pi*barW;
+      const topY=val2y(v);
+      const botY=val2y(logScale?minVal:0);
+      const bh=Math.max(botY-topY,2);
+      ctx.fillStyle=PERIOD_COLORS[pi];
+      ctx.fillRect(bx,topY,barW-2,bh);
+      // label above bar
+      ctx.fillStyle='#1a1915';ctx.font='10px sans-serif';ctx.textAlign='center';
+      const lbl=mode==='count'?v:(v>=100?(v/100).toFixed(1)+'億':(v>=10?v+'百万':''));
+      if(lbl)ctx.fillText(lbl,bx+barW/2-1,topY-3);
+    }
+    // org label: 縦書き（rotate -90°）水資源機構は管理所名のみ
+    const orgShort=orgs[gi].replace(/^水資源機構[：:]/,'');
+    const lx=gx+groupW/2;
+    const ly=PAD.top+chartH+6;
+    ctx.save();
+    ctx.translate(lx,ly);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillStyle='#5a5750';ctx.font='11px sans-serif';ctx.textAlign='right';
+    ctx.fillText(orgShort,0,4);
+    ctx.restore();
+  }
+
+  // y-axis label
+  ctx.save();ctx.translate(14,PAD.top+chartH/2);ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#8a8780';ctx.font='11px sans-serif';ctx.textAlign='center';
+  ctx.fillText(mode==='count'?'件数':'発注規模（対数軸）',0,0);ctx.restore();
+
+  // legend
+  // 上グラフの凡例（四半期色）
+  const legW=document.getElementById('chartLegendWrap');
+  if(legW){legW.innerHTML='';for(let i=0;i<PERIODS.length;i++){legW.innerHTML+=`<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;background:${PERIOD_COLORS[i]};border-radius:2px;display:inline-block;"></span>${PERIODS[i]}</span>`;}}
+  // 四半期合計グラフ（全発注者まとめて四半期別）
+  drawQuarterlyChart(data,mode);
+}
+function drawQuarterlyChart(data,mode){
+  const canvas2=document.getElementById('chartCanvas2');
+  if(!canvas2)return;
+
+  // データから年度一覧を収集
+  const yearSet=new Set();
+  data.forEach(r=>{
+    const m=(r.period||'').match(/R(\d+)/);
+    if(m)yearSet.add('R'+m[1]);
+  });
+  const years=[...yearSet].sort();
+
+  // 年度タブを構築
+  const tabContainer=document.getElementById('chartYearTabs');
+  if(tabContainer){
+    // 現在選択中の年度を保持
+    if(!window._chartYear||(!years.includes(window._chartYear)&&years.length))
+      window._chartYear=years[years.length-1]||'';
+    tabContainer.innerHTML='';
+    // 「全年度」タブ
+    const allTab=document.createElement('button');
+    allTab.textContent='全年度';
+    allTab.style.cssText='padding:3px 10px;border-radius:4px;border:1px solid var(--border);font-size:12px;cursor:pointer;'+(window._chartYear===''?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text2);');
+    allTab.onclick=()=>{window._chartYear='';drawQuarterlyChart(data,mode);};
+    tabContainer.appendChild(allTab);
+    years.forEach(y=>{
+      const btn=document.createElement('button');
+      btn.textContent=y;
+      const active=window._chartYear===y;
+      btn.style.cssText='padding:3px 10px;border-radius:4px;border:1px solid var(--border);font-size:12px;cursor:pointer;'+(active?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text2);');
+      btn.onclick=()=>{window._chartYear=y;drawQuarterlyChart(data,mode);};
+      tabContainer.appendChild(btn);
+    });
+  }
+
+  // 選択年度でデータを絞り込み
+  const selectedYear=window._chartYear||'';
+  const filteredData=selectedYear?data.filter(r=>(r.period||'').includes(selectedYear)):data;
+
+  // 発注者グループ定義
+  const allCats=[...new Set(filteredData.map(r=>r.orgCategory).filter(Boolean))];
+  const mlitCats=['北海道開発局','東北地整','関東地整','北陸地整','中部地整','近畿地整','中国地整','四国地整','九州地整','国土技術政策研','官庁営繕部','国土交通省（他）'];
+  const maffCats=['農政：東北','農政：関東','農政：北陸','農政：東海','農政：近畿','農政：中国四国','農政：九州','農林水産省（他）'];
+  const suigenCats=allCats.filter(o=>o.startsWith('水資源機構'));
+  const localCats=allCats.filter(o=>/^.{2,4}[都道府県]$/.test(o));
+  const assignedSet=new Set([...mlitCats,...maffCats,...suigenCats,...localCats]);
+  const otherCats=allCats.filter(o=>!assignedSet.has(o));
+  const GROUPS=[
+    {label:'国土交通省',cats:mlitCats,color:'#2196f3'},
+    {label:'農林水産省',cats:maffCats,color:'#4caf50'},
+    {label:'水資源機構',cats:suigenCats,color:'#ff9800'},
+    {label:'内閣府・その他',cats:otherCats,color:'#e91e63'},
+    {label:'地方公共団体',cats:localCats,color:'#9c27b0'},
+  ].filter(g=>g.cats&&g.cats.length>0);
+
+  // X軸は常に第1〜第4四半期（固定）
+  const qLabels=['第1四半期','第2四半期','第3四半期','第4四半期'];
+
+  // 四半期×グループ集計
+  const qData=qLabels.map(q=>
+    GROUPS.map(g=>{
+      const sub=filteredData.filter(r=>{
+        if(!g.cats.includes(r.orgCategory))return false;
+        const pq=getPeriodKey(r.period);
+        return pq===q;
+      });
+      return mode==='count'?sub.length:sub.reduce((s,r)=>s+scaleToMax(r.scale),0);
+    })
+  );
+  const qTotals=qData.map(row=>row.reduce((s,v)=>s+v,0));
+  const rawMax=Math.max(...qTotals,1);
+  const mag=Math.pow(10,Math.floor(Math.log10(rawMax)));
+  const maxVal2=Math.ceil(rawMax/mag)*mag;
+
+  const W2=canvas2.offsetWidth||880,H2=380;
+  canvas2.width=W2;canvas2.height=H2;
+  const ctx2=canvas2.getContext('2d');
+  ctx2.clearRect(0,0,W2,H2);
+
+  const PAD2={top:30,right:24,bottom:50,left:mode==='count'?52:80};
+  const chartW2=W2-PAD2.left-PAD2.right,chartH2=H2-PAD2.top-PAD2.bottom;
+  const v2y=v=>PAD2.top+chartH2-Math.max(v,0)/maxVal2*chartH2;
+
+  // グリッド
+  for(let i=0;i<=5;i++){
+    const v=maxVal2*i/5,y=v2y(v);
+    ctx2.strokeStyle='#e0ddd5';ctx2.lineWidth=1;
+    ctx2.beginPath();ctx2.moveTo(PAD2.left,y);ctx2.lineTo(PAD2.left+chartW2,y);ctx2.stroke();
+    ctx2.fillStyle='#8a8780';ctx2.font='11px sans-serif';ctx2.textAlign='right';
+    const lbl=mode==='scale'?(v>=100?(v/100).toFixed(v%100===0?0:1)+'億':v?v+'百万':'0'):Math.round(v)+'';
+    ctx2.fillText(lbl,PAD2.left-6,y+4);
+  }
+
+  // 積み上げ棒
+  const gw=chartW2/qLabels.length;
+  const bw=Math.min(gw*0.55,120);
+  qLabels.forEach((q,qi)=>{
+    const gx=PAD2.left+qi*gw+(gw-bw)/2;
+    let cum=0;
+    GROUPS.forEach((g,gi)=>{
+      const v=qData[qi][gi];
+      if(v<=0)return;
+      const botY=v2y(cum);cum+=v;
+      const topY=v2y(cum);
+      const h=Math.max(botY-topY,2);
+      ctx2.fillStyle=g.color;
+      ctx2.fillRect(gx,topY,bw-1,h);
+      if(h>=14){
+        ctx2.fillStyle='rgba(255,255,255,0.92)';ctx2.font='10px sans-serif';ctx2.textAlign='center';
+        const sl=mode==='scale'?(v>=100?(v/100).toFixed(1)+'億':v+'百万'):v+'';
+        ctx2.fillText(sl,gx+bw/2,topY+h/2+4);
+      }
+    });
+    const total=qTotals[qi];
+    if(total>0){
+      const lbl=mode==='scale'?(total>=100?(total/100).toFixed(1)+'億':total+'百万'):total+'件';
+      ctx2.fillStyle='#1a1915';ctx2.font='bold 12px sans-serif';ctx2.textAlign='center';
+      ctx2.fillText(lbl,gx+bw/2,v2y(total)-6);
+    }
+    // X軸ラベル（横書き）
+    ctx2.fillStyle='#3a3730';ctx2.font='13px sans-serif';ctx2.textAlign='center';
+    ctx2.fillText(q,gx+bw/2,PAD2.top+chartH2+22);
+  });
+
+  // 凡例
+  const leg2=document.getElementById('chartLegend2');
+  if(leg2){leg2.innerHTML='';GROUPS.forEach(g=>{
+    leg2.innerHTML+=`<span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;"><span style="width:12px;height:12px;background:${g.color};border-radius:2px;display:inline-block;"></span><span style="font-size:12px">${g.label}</span></span>`;
+  });}
+}
+function showExclusionWordModal(){
+  let html='<div class="approval-modal" id="exclusionModal" onclick="if(event.target.id===\'exclusionModal\')document.getElementById(\'exclusionModal\').remove()">';
+  html+='<div class="approval-box" style="max-width:700px">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-size:16px;font-weight:600;color:var(--text)">⛔ 対象外ワード管理</div>';
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+EXCLUSION_WORDS.length+'ワード登録中 — 工事名にヒットしたら判定を「対象外」に自動設定</div></div>';
+  html+='<button onclick="document.getElementById(\'exclusionModal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">✕</button></div>';
+  html+='<div style="background:#f8f7f4;border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--text3)">追加したいワードを1行1ワードで貼り付け、「追加」をクリック。設定はブラウザに保存されます。</div>';
+  html+='<div style="display:flex;gap:8px;margin-bottom:12px">';
+  html+='<textarea id="exWordInput" style="flex:1;height:80px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;resize:vertical" placeholder="ワードを1行1ワードで貼り付け"></textarea>';
+  html+='<button class="btn btn-primary" onclick="addExclusionWords()" style="align-self:flex-start;padding:8px 16px">＋ 追加</button></div>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;max-height:240px;overflow-y:auto;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">';
+  EXCLUSION_WORDS.forEach(function(w,i){
+    html+='<span style="display:inline-flex;align-items:center;gap:4px;background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:12px;font-size:12px;">'+escH(w)+'<button onclick="removeExclusionWord('+i+')" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:14px;line-height:1;padding:0">x</button></span>';
+  });
+  if(!EXCLUSION_WORDS.length)html+='<span style="color:var(--text3);font-size:12px">登録なし</span>';
+  html+='</div>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+  html+='<button class="btn" style="color:#dc2626" onclick="if(confirm(\'全ワードを削除しますか？\')){EXCLUSION_WORDS=[];saveExclusionWords();document.getElementById(\'exclusionModal\').remove();showToast(\'全ワードを削除しました\')}">全削除</button>';
+  html+='<div style="display:flex;gap:8px">';
+  html+='<button class="btn" onclick="document.getElementById(\'exclusionModal\').remove()">閉じる</button>';
+  html+='<button class="btn btn-primary" onclick="applyExclusionJudgments();document.getElementById(\'exclusionModal\').remove()">⛔ 今すぐ適用</button>';
+  html+='</div></div>';
+  html+='</div></div>';
+  const div=document.createElement('div');div.innerHTML=html;
+  document.body.appendChild(div.firstChild);
+}
+function addExclusionWords(){
+  const input=document.getElementById('exWordInput');
+  if(!input)return;
+  const words=input.value.split('\n').map(function(w){return w.trim();}).filter(Boolean);
+  words.forEach(function(w){if(!EXCLUSION_WORDS.includes(w))EXCLUSION_WORDS.push(w);});
+  saveExclusionWords();
+  document.getElementById('exclusionModal').remove();
+  showExclusionWordModal();
+}
+function removeExclusionWord(i){
+  EXCLUSION_WORDS.splice(i,1);
+  saveExclusionWords();
+  document.getElementById('exclusionModal').remove();
+  showExclusionWordModal();
+}
+// ─── Firebase Auth ─────────────────────────────
+function showLoginModal(){
+  const div=document.createElement('div');
+  div.innerHTML='<div class="approval-modal" id="loginModal"><div class="approval-box" style="max-width:380px">'
+    +'<div style="font-size:16px;font-weight:600;margin-bottom:20px">🔑 ログイン</div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">メールアドレス</label>'
+    +'<input id="loginEmail" type="email" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="email@example.com"></div>'
+    +'<div style="margin-bottom:16px"><label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">パスワード</label>'
+    +'<input id="loginPassword" type="password" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="パスワード">'
+    +'</div><div id="loginError" style="color:#dc2626;font-size:12px;margin-bottom:12px;display:none"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +'<button class="btn" onclick="closeLoginModal()">キャンセル</button>'
+    +'<button class="btn btn-primary" onclick="doLogin()">ログイン</button>'
+    +'</div></div></div>';
+  document.body.appendChild(div.firstChild);
+  setTimeout(()=>document.getElementById('loginEmail').focus(),50);
+}
+function toggleMobileMenu(){
+  const sb=document.querySelector('.sidebar');
+  const ov=document.getElementById('mobileOverlay');
+  if(!sb||!ov)return;
+  const isOpen=sb.classList.contains('mobile-open');
+  sb.classList.toggle('mobile-open',!isOpen);
+  ov.classList.toggle('show',!isOpen);
+}
+function closeMobileMenu(){
+  const sb=document.querySelector('.sidebar');
+  const ov=document.getElementById('mobileOverlay');
+  if(sb)sb.classList.remove('mobile-open');
+  if(ov)ov.classList.remove('show');
+}
+function closeLoginModal(){const m=document.getElementById('loginModal');if(m)m.remove();}
+function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPassword').value;
+  const errEl=document.getElementById('loginError');
+  if(!email||!pass){errEl.textContent='メールアドレスとパスワードを入力してください';errEl.style.display='block';return;}
+  if(!window._fbAuth){errEl.textContent='Firebase未接続';errEl.style.display='block';return;}
+  window._fbSignIn(window._fbAuth,email,pass).then(()=>{
+    document.getElementById('loginModal').remove();
+    showToast('ログインしました','success');
+  }).catch(e=>{
+    errEl.textContent='ログインに失敗しました：'+e.message;
+    errEl.style.display='block';
+  });
+}
+function doLogout(){
+  if(!window._fbAuth)return;
+  window._fbSignOut(window._fbAuth).then(()=>{
+    showToast('ログアウトしました');
+  });
+}
+function updateAuthUI(user){
+  const body=document.body;
+  const loginBtn=document.getElementById('loginBtn');
+  const logoutBtn=document.getElementById('logoutBtn');
+  const label=document.getElementById('authUserLabel');
+  if(user){
+    body.classList.add('auth-ok');
+    if(loginBtn)loginBtn.style.display='none';
+    if(logoutBtn)logoutBtn.style.display='inline-block';
+    if(label)label.textContent='✅ '+user.email;
+  } else {
+    body.classList.remove('auth-ok');
+    if(loginBtn)loginBtn.style.display='inline-block';
+    if(logoutBtn)logoutBtn.style.display='none';
+    if(label)label.textContent='';
+  }
+}
+window.addEventListener('auth-changed',e=>{
+  updateAuthUI(e.detail);
+});
+load();rebuild();
+// Firebase準備完了後に自動同期
+function onFirebaseReady(){
+  const db=window._fbDb,r=window._fbRef,g=window._fbGet;
+  g(r(db,'anken/recs')).then(snap=>{
+    const fbData=snap.val();
+    if(fbData){
+      // Firebaseにデータあり→読み込む
+      loadFromFirebase();
+    } else if(recs.length>0){
+      // Firebaseにデータなし＆localStorageにあり→自動アップロード
+      showToast('Firebaseにデータがありません。localStorageのデータを送信します...','');
+      uploadToFirebase();
+    }
+  }).catch(()=>showToast('オフラインモードで動作中','warn'));
+}
+if(window._fbReady){
+  onFirebaseReady();
+} else {
+  window.addEventListener('firebase-ready',onFirebaseReady,{once:true});
+  setTimeout(()=>{if(!window._fbReady)showToast('オフラインモードで動作中','warn');},5000);
+}
+// 定期的に自動同期（30秒ごと）
+setInterval(()=>{
+  if(window._fbReady&&window._fbDb){
+    const db=window._fbDb,r=window._fbRef,g=window._fbGet;
+    g(r(db,'anken/lastUpdate')).then(snap=>{
+      const serverTime=snap.val();
+      if(serverTime&&serverTime>window._lastSyncTime){
+        window._lastSyncTime=serverTime;
+        // 他のデバイスが更新した場合のみ再読込
+        g(r(db,'anken/recs')).then(s2=>{if(s2.val()){recs=[];loadFromData(s2.val(),'');rebuild();}});
+      }
+    }).catch(()=>{});
+  }
+},30000);
+</script>
+</body>
+</html>
