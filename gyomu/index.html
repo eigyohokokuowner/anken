@@ -919,6 +919,9 @@ function renderTable(data){
         +'<div class="det-item"><div class="lbl">公告日</div><div class="val">'+esc(r._koukokuDate||'')+'</div></div>'
         +(r._status==='kaisatsu'?('<div class="det-item"><div class="lbl">開札日</div><div class="val">'+esc(r._kaisatsuDate||'')+'</div></div>'):'')
         +(r._status==='kaisatsu'?('<div class="det-item"><div class="lbl">落札者名</div><div class="val">'+esc(r.rakusatsuSha||'（未登録）')+'</div></div>'):'')
+        +(r._status==='kaisatsu'?('<div class="det-item auth-required"><div class="lbl">紐付け操作</div><div class="val">'
+          +'<button onclick="unlinkKaisatsu(\''+r.id+'\')" style="font-size:12px;padding:4px 14px;border:1px solid var(--warn);border-radius:4px;background:var(--warn-light);color:var(--warn);cursor:pointer;font-weight:600">🔓 開札情報を解除</button>'
+          +'</div></div>'):'')
         +(r._status==='kaisatsu'&&!r.rakusatsuSha?('<div class="det-item auth-required"><div class="lbl">不調不落</div><div class="val">'
           +(r._futyo
             ?('<span style="background:#ff6b35;color:white;padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600">⚠ 不調不落</span>　<button onclick="setFutyo(\''+r.id+'\',false)" style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;cursor:pointer">解除</button>')
@@ -962,6 +965,20 @@ function deleteRec(id){
   seen.delete(id);ex.delete(id);
   save();rebuild();
   showToast('削除しました','success');
+}
+function unlinkKaisatsu(id){
+  if(!window._canEdit){showToast('操作にはログインが必要です','warn');return;}
+  const rec=recs.find(r=>r.id===id);
+  if(!rec)return;
+  if(rec._status!=='kaisatsu')return;
+  if(!confirm('開札情報の紐づけを解除し、「公告中」に戻します。よろしいですか？\n（開札日・落札者名・不調不落の情報は削除されます）'))return;
+  rec._status='koukoku';
+  rec._kaisatsuDate='';
+  rec.rakusatsuSha='';
+  rec._futyo=false;
+  rec.date=rec._koukokuDate||rec.date;
+  save();rebuild();
+  showToast('開札情報を解除し、公告中に戻しました','success');
 }
 
 function rebuild(){updateStats();rebuildSidebar();applyFilters();}
