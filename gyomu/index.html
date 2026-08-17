@@ -317,6 +317,7 @@
           <label><input type="checkbox" value="none" onchange="applyFilters()">― 未設定</label>
         </div>
       </div>
+      <button class="btn auth-required" onclick="showAutoDeleteWordsModal()" style="margin-left:auto">⛔ 自動削除ワード管理</button>
 
     </div>
 
@@ -348,6 +349,14 @@
 </div>
 <script>
 const SK='gyomu_v1',SEK='gyomu_seen_v1';
+const ADWK='gyomu_auto_delete_words_v1';
+let autoDeleteWords=loadAutoDeleteWords();
+function loadAutoDeleteWords(){try{const v=JSON.parse(localStorage.getItem(ADWK)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+function saveAutoDeleteWords(){try{localStorage.setItem(ADWK,JSON.stringify(autoDeleteWords));}catch(e){}}
+function matchesAutoDeleteWord(name){
+  if(!autoDeleteWords.length||!name)return false;
+  return autoDeleteWords.some(w=>w&&name.includes(w));
+}
 let recs=[],seen=new Set(),cf='all',jf='',cos=new Set(),sc='date',sd='desc',ex=new Set();
 let _lastFilteredList=[];
 let _renderLimit=200;
@@ -571,10 +580,11 @@ function importKoukoku(text,fname){
   const data=rows.slice(hi+1);
 
   const idIndex=new Map(recs.map(r=>[r.id,r]));
-  let nc=0,updated=0;
+  let nc=0,updated=0,autoDel=0;
   for(const row of data){
     const name=(row[c_name]||'').trim();
     if(!name)continue;
+    if(matchesAutoDeleteWord(name)){autoDel++;continue;}
     const org=(row[c_org]||'').trim();
     const rec={
       org,orgCategory:orgCat(org),name,
@@ -601,7 +611,87 @@ function importKoukoku(text,fname){
     nc++;
   }
   save();rebuild();
-  showToast(`公告CSV取込：新規${nc}件・更新${updated}件`,'success');
+  showToast(`公告CSV取込：新規${nc}件・更新${updated}件`+(autoDel?`・自動削除${autoDel}件`:''),'success');
+}
+
+// ─── 自動削除ワード管理 ─────────────────────────
+function showAutoDeleteWordsModal(){
+  if(document.getElementById('autoDeleteModal'))return;
+  const div=document.createElement('div');
+  div.innerHTML=autoDeleteModalHtml();
+  document.body.appendChild(div.firstChild);
+  document.getElementById('autoDeleteTextarea').focus();
+}
+function autoDeleteModalHtml(){
+  return '<div class="approval-modal" id="autoDeleteModal">'
+    +'<div class="approval-box" style="max-width:640px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">'
+    +'<div style="font-size:16px;font-weight:600;color:var(--danger);display:flex;align-items:center;gap:6px">⛔ 自動削除ワード管理</div>'
+    +'<span style="cursor:pointer;color:var(--text3);font-size:18px;line-height:1" onclick="closeAutoDeleteWordsModal()">✕</span>'
+    +'</div>'
+    +'<div id="autoDeleteCountLabel" style="font-size:12px;color:var(--text3);margin-bottom:14px">'+autoDeleteWords.length+'ワード登録中 — 業務名にヒットしたら自動で削除</div>'
+    +'<div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">追加したいワードを1行1ワードで貼り付け、「追加」をクリック。設定はブラウザに保存されます。公告CSV取込時、業務名にヒットした案件は登録されずに自動で除外されます。</div>'
+    +'<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">'
+    +'<textarea id="autoDeleteTextarea" placeholder="ワードを1行1ワードで貼り付け" style="flex:1;min-height:70px;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none"></textarea>'
+    +'<button class="btn btn-primary" style="white-space:nowrap" onclick="addAutoDeleteWordsFromTextarea()">＋ 追加</button>'
+    +'</div>'
+    +'<div id="autoDeleteChips" style="border:1px solid var(--border);border-radius:8px;padding:10px;max-height:220px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px">'+autoDeleteChipsHtml()+'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">'
+    +'<button class="btn btn-danger" style="font-size:12px" onclick="clearAllAutoDeleteWords()">全削除</button>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button class="btn" onclick="closeAutoDeleteWordsModal()">閉じる</button>'
+    +'<button class="btn btn-danger" onclick="applyAutoDeleteWordsNow()">⛔ 今すぐ適用</button>'
+    +'</div></div>'
+    +'</div></div>';
+}
+function autoDeleteChipsHtml(){
+  if(!autoDeleteWords.length)return '<div style="font-size:12px;color:var(--text3);font-style:italic;padding:4px 0">登録されているワードはありません</div>';
+  return autoDeleteWords.map(w=>'<span style="display:inline-flex;align-items:center;gap:5px;background:var(--danger-light);color:var(--danger);border-radius:14px;padding:3px 6px 3px 12px;font-size:12px">'
+    +esc(w)+'<span onclick="removeAutoDeleteWord('+JSON.stringify(w).replace(/"/g,'&quot;')+')" style="cursor:pointer;font-weight:700;padding:0 4px">×</span></span>').join('');
+}
+function refreshAutoDeleteModal(){
+  const chips=document.getElementById('autoDeleteChips');
+  if(chips)chips.innerHTML=autoDeleteChipsHtml();
+  const lbl=document.getElementById('autoDeleteCountLabel');
+  if(lbl)lbl.textContent=autoDeleteWords.length+'ワード登録中 — 業務名にヒットしたら自動で削除';
+}
+function closeAutoDeleteWordsModal(){const m=document.getElementById('autoDeleteModal');if(m)m.remove();}
+function addAutoDeleteWordsFromTextarea(){
+  const ta=document.getElementById('autoDeleteTextarea');
+  if(!ta)return;
+  const lines=ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length)return;
+  let added=0;
+  lines.forEach(w=>{if(!autoDeleteWords.includes(w)){autoDeleteWords.push(w);added++;}});
+  saveAutoDeleteWords();
+  ta.value='';
+  refreshAutoDeleteModal();
+  showToast(added+'件のワードを追加しました','success');
+}
+function removeAutoDeleteWord(w){
+  autoDeleteWords=autoDeleteWords.filter(x=>x!==w);
+  saveAutoDeleteWords();
+  refreshAutoDeleteModal();
+}
+function clearAllAutoDeleteWords(){
+  if(!autoDeleteWords.length)return;
+  if(!confirm('登録済みの自動削除ワードをすべて削除します。よろしいですか？'))return;
+  autoDeleteWords=[];
+  saveAutoDeleteWords();
+  refreshAutoDeleteModal();
+  showToast('自動削除ワードを全て削除しました','success');
+}
+function applyAutoDeleteWordsNow(){
+  if(!window._canEdit){showToast('操作にはログインが必要です','warn');return;}
+  if(!autoDeleteWords.length){showToast('ワードが登録されていません','warn');return;}
+  const targets=recs.filter(r=>matchesAutoDeleteWord(r.name));
+  if(!targets.length){showToast('該当する案件はありませんでした','success');return;}
+  if(!confirm('登録中のワードに一致する既存案件 '+targets.length+' 件を削除します。よろしいですか？この操作は取り消せません。'))return;
+  const targetIds=new Set(targets.map(t=>t.id));
+  recs=recs.filter(r=>!targetIds.has(r.id));
+  targetIds.forEach(id=>{seen.delete(id);ex.delete(id);});
+  save();rebuild();
+  showToast(targets.length+'件を自動削除しました','success');
 }
 
 // ─── CSV読込（開札） ─────────────────────────
