@@ -1301,12 +1301,14 @@ function showCompanyHistory(){
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px">
         <div style="position:relative;display:inline-block">
           <button onclick="toggleChCompanyDrop()" id="chCompanyBtn" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);cursor:pointer;min-width:200px;text-align:left">会社を選択 ▾</button>
-          <div id="chCompanyDrop" style="display:none;position:absolute;top:100%;left:0;z-index:999;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);min-width:240px;max-height:280px;overflow-y:auto;margin-top:2px">
+          <div id="chCompanyDrop" style="display:none;position:absolute;top:100%;left:0;z-index:999;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);min-width:240px;max-height:320px;overflow-y:auto;margin-top:2px">
+            <input type="text" id="chCompanySearch" placeholder="🔍 会社名で検索…" oninput="chFilterCompanies(this.value)" onclick="event.stopPropagation()" style="width:100%;box-sizing:border-box;padding:5px 7px;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;font-size:12px">
             <div style="display:flex;gap:6px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
               <button onclick="chCheckAll(true)" style="flex:1;font-size:11px;padding:2px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
               <button onclick="chCheckAll(false)" style="flex:1;font-size:11px;padding:2px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
             </div>
-            ${companies.map(c=>'<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px;cursor:pointer"><input type="checkbox" class="ch-company-cb" value="'+escH(c)+'"> '+escH(c)+'</label>').join('')}
+            <div id="chCompanyList">${companies.map(c=>'<label class="ch-company-label" data-name="'+escH(c).toLowerCase()+'" style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px;cursor:pointer"><input type="checkbox" class="ch-company-cb" value="'+escH(c)+'"> '+escH(c)+'</label>').join('')}</div>
+            <div id="chCompanyNoMatch" style="display:none;font-size:12px;color:var(--text3);padding:6px 4px;text-align:center">該当する会社がありません</div>
           </div>
         </div>
         <div style="position:relative;display:inline-block">
@@ -1556,7 +1558,25 @@ function toggleChDrop(id){const d=document.getElementById(id);if(d)d.style.displ
 function chCheckAllClass(cls,v){document.querySelectorAll('.'+cls).forEach(cb=>{cb.checked=v;});}
 function toggleChCompanyDrop(){
   const d=document.getElementById('chCompanyDrop');
-  if(d)d.style.display=d.style.display==='none'?'block':'none';
+  if(!d)return;
+  const opening=d.style.display==='none';
+  d.style.display=opening?'block':'none';
+  if(opening){
+    const s=document.getElementById('chCompanySearch');
+    if(s){s.value='';chFilterCompanies('');setTimeout(()=>s.focus(),0);}
+  }
+}
+function chFilterCompanies(q){
+  const query=(q||'').trim().toLowerCase();
+  const labels=document.querySelectorAll('#chCompanyList .ch-company-label');
+  let visibleCount=0;
+  labels.forEach(l=>{
+    const match=!query||(l.dataset.name||'').includes(query);
+    l.style.display=match?'flex':'none';
+    if(match)visibleCount++;
+  });
+  const noMatch=document.getElementById('chCompanyNoMatch');
+  if(noMatch)noMatch.style.display=visibleCount===0?'block':'none';
 }
 function chCheckAll(v){
   document.querySelectorAll('.ch-company-cb').forEach(cb=>{cb.checked=v;});
