@@ -839,20 +839,35 @@ function toggleGyomuPanel(){
 function parseGyomuDetail(text){
   // ラベル例：「（１）」「１）」「(1)」など。番号＋閉じ括弧の直後に続く語をラベル語とみなす
   const NAME_LABEL=/[（(]?\s*[０-９0-9]+\s*[）)]\s*業\s*務\s*名/;
-  const CONTENT_LABEL=/[（(]?\s*[０-９0-9]+\s*[）)]\s*業\s*務\s*内\s*容/;
+  // 「業務内容」の他、「業務の内容」「内容」「業務目的」「業務の目的」「目的」など表記ゆれを許容
+  const CONTENT_LABEL=/[（(]?\s*[０-９0-9]+\s*[）)]\s*(業\s*務\s*(の\s*)?)?(内\s*容|目\s*的)/;
   const ANY_LABEL=/[（(]?\s*[０-９0-9]+\s*[）)]\s*[^\s　０-９0-9]/g;
+  // ラベルの後に続く「：」「:」「－」「-」等の区切り記号を除去
+  const stripSep=s=>s.replace(/^[\s　]*[：:－\-]?[\s　]*/,'').trim();
 
   const nm=text.match(NAME_LABEL);
-  const cm=text.match(CONTENT_LABEL);
-  if(!nm||!cm)return{name:'',content:''};
+  if(!nm)return{name:'',content:''};
 
-  const name=text.slice(nm.index+nm[0].length,cm.index).trim();
+  // 業務名の終端：業務名ラベルの直後から、次に現れるラベル（見出し語は問わない）までを名称とみなす
+  ANY_LABEL.lastIndex=nm.index+nm[0].length;
+  const nameEndM=ANY_LABEL.exec(text);
+  const nameEnd=nameEndM?nameEndM.index:text.length;
+  const name=stripSep(text.slice(nm.index+nm[0].length,nameEnd));
 
-  const contentStart=cm.index+cm[0].length;
-  ANY_LABEL.lastIndex=contentStart;
-  const nextLabelM=ANY_LABEL.exec(text);
-  const contentEnd=nextLabelM?nextLabelM.index:text.length;
-  const content=text.slice(contentStart,contentEnd).trim();
+  // 業務内容（または目的等）ラベルを、業務名の終端以降から探す
+  const rest=text.slice(nameEnd);
+  const cm=rest.match(CONTENT_LABEL);
+  let content;
+  if(cm){
+    const contentStartAbs=nameEnd+cm.index+cm[0].length;
+    ANY_LABEL.lastIndex=contentStartAbs;
+    const nextLabelM=ANY_LABEL.exec(text);
+    const contentEnd=nextLabelM?nextLabelM.index:text.length;
+    content=stripSep(text.slice(contentStartAbs,contentEnd));
+  } else {
+    // 「業務内容」等のラベルが見つからない場合は、業務名以降の残りテキストをそのまま業務内容として扱う
+    content=stripSep(rest);
+  }
 
   return{name,content};
 }
