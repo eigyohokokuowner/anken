@@ -3131,6 +3131,31 @@ function parseBlock(text){
       }
     }
   }
+  if(!rakusatsuPrice){
+    // 水資源機構詳細形式（随意契約等）：「（原）契約金額（税抜き）\n○○円」形式（既に税抜き）
+    const priceZeinukiM=text.match(/契約金額[（(]税抜き[）)]\n([^\n]+)/);
+    if(priceZeinukiM){
+      let p=priceZeinukiM[1].trim();
+      p=p.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/，/g,',');
+      const digits=p.replace(/[^\d]/g,'');
+      if(digits)rakusatsuPrice=parseInt(digits,10).toLocaleString();
+    }
+  }
+  if(!rakusatsuPrice){
+    // 水資源機構詳細形式（随意契約等）：「（原）契約金額（税込み）\n24,750,000円」形式
+    // → 消費税(10%)を除いた税抜き金額に換算して登録する
+    const priceZeikomiM=text.match(/契約金額[（(]税込み?[）)]\n([^\n]+)/);
+    if(priceZeikomiM){
+      let p=priceZeikomiM[1].trim();
+      // 全角数字→半角
+      p=p.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/，/g,',');
+      const digits=p.replace(/[^\d]/g,'');
+      if(digits){
+        const zeinuki=Math.round(parseInt(digits,10)/1.1);
+        rakusatsuPrice=zeinuki.toLocaleString();
+      }
+    }
+  }
   // 価格の「（税抜き）」等を除去して数字だけ残す
   if(rakusatsuPrice)rakusatsuPrice=rakusatsuPrice=rakusatsuPrice.replace(/（[^）]*）/g,'').replace(/[(（][^)）]*[)）]/g,'').trim();
   let kaisatsuDateStr=get('開札日時')||get('開札日')||'';
