@@ -4787,14 +4787,23 @@ async function authVerifyLogin(username,password){
   // canEdit未設定（既存アカウント等）は編集可能として扱う（後方互換のため）
   return{ok:true,canEdit:rec.canEdit!==false};
 }
-async function authAddUser(username,password,canEdit){
+async function authAddUser(username,password,canEdit,name,affiliation){
   const db=window._fbDb,r=window._fbRef,s=window._fbSet;
   username=username.trim();
   if(!username||!password)throw new Error('IDとパスワードを入力してください');
   if(password.length<4)throw new Error('パスワードは4文字以上にしてください');
   const salt=randomSalt();
   const hash=await sha256Hex(salt+password);
-  await s(r(db,'authUsers/'+authKeyFor(username)),{username,salt,hash,canEdit:!!canEdit,createdAt:new Date().toISOString()});
+  await s(r(db,'authUsers/'+authKeyFor(username)),{username,salt,hash,canEdit:!!canEdit,name:(name||'').trim(),affiliation:(affiliation||'').trim(),createdAt:new Date().toISOString()});
+}
+async function authSetProfile(username,patch){
+  const db=window._fbDb,r=window._fbRef,g=window._fbGet,s=window._fbSet;
+  const key='authUsers/'+authKeyFor(username);
+  const snap=await g(r(db,key));
+  const rec=snap.val();
+  if(!rec)throw new Error('アカウントが見つかりません');
+  Object.assign(rec,patch);
+  await s(r(db,key),rec);
 }
 async function authDeleteUser(username){
   const db=window._fbDb,r=window._fbRef,s=window._fbSet;
@@ -4813,15 +4822,19 @@ async function authListUsers(){
   const db=window._fbDb,r=window._fbRef,g=window._fbGet;
   const snap=await g(r(db,'authUsers'));
   const v=snap.val()||{};
-  return Object.values(v).map(u=>({username:u.username,canEdit:u.canEdit!==false})).sort((a,b)=>a.username.localeCompare(b.username));
+  return Object.values(v).map(u=>({username:u.username,canEdit:u.canEdit!==false,name:u.name||'',affiliation:u.affiliation||''})).sort((a,b)=>a.username.localeCompare(b.username));
 }
 function showAccountModal(){
   const div=document.createElement('div');
-  div.innerHTML='<div class="approval-modal" id="acctModal"><div class="approval-box" style="max-width:440px">'
+  div.innerHTML='<div class="approval-modal" id="acctModal"><div class="approval-box" style="max-width:680px">'
     +'<div style="font-size:16px;font-weight:600;margin-bottom:16px">👤 アカウント管理</div>'
-    +'<div id="acctList" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:16px;font-size:13px">読み込み中…</div>'
+    +'<div id="acctList" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:16px;font-size:13px">読み込み中…</div>'
     +'<div style="font-size:13px;font-weight:600;margin-bottom:8px">新しいIDを追加</div>'
-    +'<div style="margin-bottom:8px"><input id="newAcctId" type="text" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="ID（例：sato）"></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:8px">'
+    +'<input id="newAcctId" type="text" style="flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="ID（例：sato）">'
+    +'<input id="newAcctName" type="text" style="flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="名前（例：佐藤太郎）">'
+    +'<input id="newAcctAffiliation" type="text" style="flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="所属（例：営業部）">'
+    +'</div>'
     +'<div style="margin-bottom:8px"><input id="newAcctPass" type="text" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" placeholder="初期パスワード（4文字以上）"></div>'
     +'<div style="margin-bottom:10px;font-size:13px"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input id="newAcctCanEdit" type="checkbox">編集を許可する（CSV取込・判定変更などの操作ができます）</label>'
     +'<div style="font-size:11px;color:var(--text3);margin-top:2px;margin-left:22px">チェックなしの場合、閲覧・検索・グラフ表示のみ可能な「閲覧専用」アカウントになります</div></div>'
@@ -4839,27 +4852,36 @@ function refreshAcctList(){
   authListUsers().then(users=>{
     if(!document.getElementById('acctList'))return;
     if(!users.length){document.getElementById('acctList').innerHTML='<span style="color:var(--text3)">登録されているIDがありません</span>';return;}
-    document.getElementById('acctList').innerHTML=users.map(u=>{
+    const header='<div style="display:grid;grid-template-columns:88px 110px 130px 68px 1fr;gap:8px;align-items:center;padding:0 2px 6px;margin-bottom:4px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3)">'
+      +'<span>ID</span><span>名前</span><span>所属</span><span>権限</span><span></span></div>';
+    const rows=users.map(u=>{
       const safeName=esc(u.username).replace(/'/g,"\\'");
       const roleLabel=u.canEdit?'<span style="color:var(--accent);font-size:11px">✏ 編集可</span>':'<span style="color:var(--text3);font-size:11px">👁 閲覧のみ</span>';
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px;border-bottom:1px solid var(--border);gap:8px">'
-      +'<span>'+esc(u.username)+'</span>'
-      +'<span style="display:flex;align-items:center;gap:8px">'
+      return '<div style="display:grid;grid-template-columns:88px 110px 130px 68px 1fr;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--border)">'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(u.username)+'">'+esc(u.username)+'</span>'
+      +'<input type="text" value="'+esc(u.name||'')+'" placeholder="名前" style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px" onchange="updateAcctName(\''+safeName+'\',this.value)">'
+      +'<input type="text" value="'+esc(u.affiliation||'')+'" placeholder="所属" style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px" onchange="updateAcctAffiliation(\''+safeName+'\',this.value)">'
       +roleLabel
-      +'<button class="btn" style="font-size:11px;padding:2px 8px" onclick="toggleAcctRoleBtn(\''+safeName+'\','+(!u.canEdit)+')">'+(u.canEdit?'閲覧のみにする':'編集可にする')+'</button>'
+      +'<span style="display:flex;align-items:center;gap:6px;justify-content:flex-end">'
+      +'<button class="btn" style="font-size:11px;padding:2px 8px;white-space:nowrap" onclick="toggleAcctRoleBtn(\''+safeName+'\','+(!u.canEdit)+')">'+(u.canEdit?'閲覧のみにする':'編集可にする')+'</button>'
       +'<button class="btn btn-danger" style="font-size:11px;padding:2px 8px" onclick="deleteAcctBtn(\''+safeName+'\')">削除</button>'
       +'</span></div>';
     }).join('');
+    document.getElementById('acctList').innerHTML=header+rows;
   }).catch(()=>{const el=document.getElementById('acctList');if(el)el.innerHTML='<span style="color:#dc2626">読み込みに失敗しました</span>';});
 }
 function addAcctBtn(){
   const id=document.getElementById('newAcctId').value.trim();
   const pass=document.getElementById('newAcctPass').value;
   const canEdit=document.getElementById('newAcctCanEdit').checked;
+  const name=document.getElementById('newAcctName').value;
+  const affiliation=document.getElementById('newAcctAffiliation').value;
   const errEl=document.getElementById('acctError');
   errEl.style.display='none';
-  authAddUser(id,pass,canEdit).then(()=>{
+  authAddUser(id,pass,canEdit,name,affiliation).then(()=>{
     document.getElementById('newAcctId').value='';
+    document.getElementById('newAcctName').value='';
+    document.getElementById('newAcctAffiliation').value='';
     document.getElementById('newAcctPass').value='';
     document.getElementById('newAcctCanEdit').checked=false;
     showToast('IDを追加しました：'+id+(canEdit?'（編集可）':'（閲覧のみ）'),'success');
@@ -4868,6 +4890,12 @@ function addAcctBtn(){
     errEl.textContent=e.message||'追加に失敗しました';
     errEl.style.display='block';
   });
+}
+function updateAcctName(username,val){
+  authSetProfile(username,{name:val}).then(()=>showToast('名前を更新しました','success')).catch(()=>{showToast('更新に失敗しました','warn');refreshAcctList();});
+}
+function updateAcctAffiliation(username,val){
+  authSetProfile(username,{affiliation:val}).then(()=>showToast('所属を更新しました','success')).catch(()=>{showToast('更新に失敗しました','warn');refreshAcctList();});
 }
 function toggleAcctRoleBtn(username,newCanEdit){
   authSetCanEdit(username,newCanEdit).then(()=>{
