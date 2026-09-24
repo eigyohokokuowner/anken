@@ -3341,7 +3341,17 @@ function rebuildSidebar(){
     label.textContent=group.label;
     const cnt=document.createElement('span');
     cnt.className='sidebar-count';cnt.style.cssText='font-size:10px;background:#e0ddd8';cnt.textContent=totalCount;
-    header.appendChild(icon);header.appendChild(label);header.appendChild(cnt);
+    // グループ一括選択チェックボックス（全選択／一部選択／未選択）
+    const selCount=children.filter(c=>cos.has(c)).length;
+    const grpCb=document.createElement('input');
+    grpCb.type='checkbox';
+    grpCb.checked=selCount===children.length;
+    grpCb.indeterminate=selCount>0&&selCount<children.length;
+    grpCb.title=group.label+'の全事務所を選択／解除';
+    grpCb.style.cssText='flex-shrink:0;cursor:pointer;margin:0 6px 0 0;accent-color:var(--accent)';
+    grpCb.addEventListener('click',e=>e.stopPropagation());// 見出しの開閉を起こさない
+    grpCb.addEventListener('change',e=>{e.stopPropagation();toggleOrgGroup(children,grpCb.checked);});
+    header.appendChild(icon);header.appendChild(grpCb);header.appendChild(label);header.appendChild(cnt);
     // 子リスト
     const childList=document.createElement('div');
     childList.className='sidebar-group-children';
@@ -3379,6 +3389,7 @@ function rebuildSidebar(){
   }
 }
 function toggleOrg(o){if(cos.has(o))cos.delete(o);else cos.add(o);rebuildSidebar();applyFilters();}
+function toggleOrgGroup(orgs,checked){for(const o of orgs){if(checked)cos.add(o);else cos.delete(o);}rebuildSidebar();applyFilters();}
 function getPeriodKey(p){const m=(p||'').match(/第\d四半期/);return m?m[0]:p;}
 function rebuildFilters(){
   const LABEL_STYLE='display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer';
