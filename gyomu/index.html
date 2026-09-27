@@ -283,7 +283,7 @@
         <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:8px">
           i-ppi.jpの案件詳細ページ、または「入札の経過（業務）案件概要」ページのテキストをコピーして貼り付けてください。<br>
           「業務内容を反映」：業務名が完全一致する案件に業務内容を保存します（判定も自動で追跡案件に）。<br>
-          「落札者名を反映」：業務名称・公告日の両方が完全一致する開札済案件に、落札者名を保存します。
+          「落札者名を反映」：業務名称・公告日の両方が完全一致する開札済案件に、落札者名を保存します（落札者名が空欄の場合は契約者名を登録）。
         </div>
         <textarea id="gyomuDetailTA" style="width:100%;height:110px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);background:var(--bg);resize:vertical;outline:none;line-height:1.6;" placeholder="ここに詳細ページ or 入札経過ページのテキストを貼り付け"></textarea>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
@@ -910,29 +910,42 @@ function applyGyomuDetail(){
   showToast('業務内容を反映しました（判定：追跡案件）：'+target.name,'success');
 }
 
-// i-ppi.jp「入札の経過（業務）案件概要」ページのテキストから業務名称・公告日・落札者名を抽出
-function parseKaisatsuKekka(text){
-  const nameM=text.match(/業務名称[\t　 ]*([^\n]+)/);
-  const dateM=text.match(/公告日時[\t　 ]*([^\n]+)/);
-  const shaM=text.match(/落札者名[\t　 ]*([^\n]+)/);
-  const name=nameM?nameM[1].trim():'';
-  let koukokuDate='';
-  if(dateM){
-    const m=dateM[1].match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-    if(m)koukokuDate=m[1]+'/'+m[2].padStart(2,'0')+'/'+m[3].padStart(2,'0');
+// i-ppi.jp「入札の経過（業務）案件概要」ページのテキストから業務名称・公告日・落札者名（なければ契約者名）を抽出
+// 行単位で「項目名＋同じ行の値」を取り出す（値が空欄の行は空文字として扱う）
+function pickLineValue(text,label){
+  const lines=text.split(/\r?\n/);
+  for(const line of lines){
+    const t=line.replace(/^[\s　]+/,'');
+    if(t.startsWith(label)){
+      const v=t.slice(label.length).replace(/^[\t　 :：]+/,'').trim();
+      if(v)return v;
+    }
   }
-  const rakusatsuSha=shaM?shaM[1].trim():'';
-  return{name,koukokuDate,rakusatsuSha};
+  return '';
+}
+function parseKaisatsuKekka(text){
+  const name=pickLineValue(text,'業務名称');
+  let koukokuDate='';
+  const dateRaw=pickLineValue(text,'公告日時')||pickLineValue(text,'公告日');
+  const m=dateRaw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if(m)koukokuDate=m[1]+'/'+m[2].padStart(2,'0')+'/'+m[3].padStart(2,'0');
+  let rakusatsuSha=pickLineValue(text,'落札者名');
+  let source='落札者名';
+  if(!rakusatsuSha){
+    rakusatsuSha=pickLineValue(text,'契約者名');
+    source='契約者名';
+  }
+  return{name,koukokuDate,rakusatsuSha,source};
 }
 
 function applyKaisatsuKekka(){
   if(!window._canEdit){showToast('編集にはログインが必要です','warn');return;}
   const raw=document.getElementById('gyomuDetailTA').value.trim();
   if(!raw){showToast('テキストが入力されていません','warn');return;}
-  const{name,koukokuDate,rakusatsuSha}=parseKaisatsuKekka(raw);
+  const{name,koukokuDate,rakusatsuSha,source}=parseKaisatsuKekka(raw);
   if(!name){showToast('「業務名称」を認識できませんでした','warn');return;}
   if(!koukokuDate){showToast('「公告日時」を認識できませんでした','warn');return;}
-  if(!rakusatsuSha){showToast('「落札者名」を認識できませんでした','warn');return;}
+  if(!rakusatsuSha){showToast('「落札者名」「契約者名」のどちらも認識できませんでした','warn');return;}
   // 業務名称・公告日の両方が完全一致する開札済案件を検索（空白差異は無視）
   const stripWs=s=>s.replace(/[\s　]+/g,'');
   const target=recs.find(r=>r._status==='kaisatsu'&&stripWs(r.name)===stripWs(name)&&stripWs(r._koukokuDate||'')===stripWs(koukokuDate));
@@ -944,7 +957,7 @@ function applyKaisatsuKekka(){
   target.date=todayDateStr();// 更新日は反映操作を行った当日の日付
   save();rebuild();
   document.getElementById('gyomuDetailTA').value='';
-  showToast('落札者名を登録しました：'+target.name+' → '+rakusatsuSha,'success');
+  showToast('落札者名を登録しました'+(source==='契約者名'?'（契約者名から）':'')+'：'+target.name+' → '+rakusatsuSha,'success');
 }
 
 // ─── フィルター・描画 ─────────────────────────
