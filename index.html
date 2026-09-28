@@ -23,6 +23,7 @@
     window._fbSet = set;
     window._fbGet = get;
     window._fbOnValue = onValue;
+    window._fbDbUrl = firebaseConfig.databaseURL;
     const auth = getAuth(app);
     window._fbAuth = auth;
     window._fbSignIn = signInWithEmailAndPassword;
@@ -975,8 +976,12 @@ window._imgDeleteKeys=window._imgDeleteKeys||new Set();// 移し替え済みで�
 // Firebaseの anken/imgs を読み込み、各案件に画像を戻す（旧形式の階層化データも救済する）
 function attachChosakuImgsFromFirebase(){
   const db=window._fbDb,r=window._fbRef,g=window._fbGet;
-  return g(r(db,'anken/imgs')).then(snap=>{
-    const data=snap.val();
+  return g(r(db,'anken/imgs')).then(snap=>{processChosakuImgsData(snap.val());});
+}
+// anken/imgs の中身（一部でも可）を各案件に割り当てる。旧形式の階層化データ・ID変更で浮いた画像も救済する
+function processChosakuImgsData(data){
+  {
+    const db=window._fbDb,r=window._fbRef;
     if(!data)return;
     const byKey=new Map(recs.map(rc=>[chosakuImgKey(rc.id),rc]));
     const legacyTop=new Set(),keepTop=new Set();// keepTop：対応する案件が見つからない画像を含むため削除しない
@@ -1023,7 +1028,7 @@ function attachChosakuImgsFromFirebase(){
         legacyTop.forEach(t=>{if(!keepTop.has(t))s(r(db,'anken/imgs/'+t),null).catch(()=>{});});
       });
     }
-  });
+  }
 }
 // 変更のあった案件の画像だけFirebaseに保存（空になった案件は削除）
 function saveChosakuImgs(){
@@ -1048,6 +1053,59 @@ function saveChosakuImgs(){
   window._lastImgSave=p;
   return p;
 }
+// ─── 入札調書画像の読み込み（HTTPで1案件ずつ・並列） ─────────
+// 以前は起動時に anken/imgs 全体（全案件の画像）を一括で読み込んでいた。画像が増えると
+// 数十MBになり、読み込みが終わるまで画像が表示されず、同じ通信路を使う保存も後回しにされて
+// いつまでも完了しなかった。案件ごとにHTTPで取得し、届いたものから表示する。
+function refreshChosakuView(rec){
+  const div=document.getElementById('chos-'+rec.id);
+  if(div&&div.style.display!=='none')div.innerHTML=renderChosakuSection(rec);
+}
+async function fbRestGet(path,extra){
+  let q=extra||'';
+  try{if(window._fbUser&&window._fbUser.getIdToken){const tk=await window._fbUser.getIdToken();q+=(q?'&':'')+'auth='+encodeURIComponent(tk);}}catch(e){}
+  const url=window._fbDbUrl+'/'+path.split('/').map(encodeURIComponent).join('/')+'.json'+(q?'?'+q:'');
+  const res=await fetch(url);
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  return res.json();
+}
+async function loadChosakuImgsProgressive(onlyMissing){
+  if(!window._fbDbUrl)return attachChosakuImgsFromFirebase();
+  let keys;
+  try{keys=await fbRestGet('anken/imgs','shallow=true');}
+  catch(e){console.warn('画像一覧の取得に失敗。一括読み込みに切り替えます:',e);return attachChosakuImgsFromFirebase();}
+  if(!keys)return;
+  const byKey=new Map(recs.map(rc=>[chosakuImgKey(rc.id),rc]));
+  const known=[],unknown=[];
+  Object.keys(keys).forEach(k=>{
+    const rec=byKey.get(k);
+    if(rec){if(!(onlyMissing&&rec._chosakuImgs&&rec._chosakuImgs.length))known.push([k,rec]);}
+    else if(!onlyMissing)unknown.push(k);
+  });
+  window._imgLoading=new Set(known.map(([,rec])=>rec.id));
+  known.forEach(([,rec])=>refreshChosakuView(rec));
+  let i=0;
+  const worker=async()=>{
+    while(i<known.length){
+      const [k,rec]=known[i++];
+      try{
+        const v=await fbRestGet('anken/imgs/'+k);
+        // 読み込み中にこの端末で画像を追加・削除した場合は上書きしない
+        if(typeof v==='string'&&!window._imgDirty.has(rec.id)){const arr=JSON.parse(v);if(Array.isArray(arr))rec._chosakuImgs=arr;}
+      }catch(e){console.warn('画像読み込みエラー:',rec.name,e);}
+      window._imgLoading.delete(rec.id);
+      refreshChosakuView(rec);
+    }
+  };
+  await Promise.all([worker(),worker(),worker(),worker()]);
+  // どの案件にも一致しないキー（旧形式・ID変更）は中身を取得して救済処理へ
+  if(unknown.length){
+    const data={};
+    for(const k of unknown){try{data[k]=await fbRestGet('anken/imgs/'+k);}catch(e){}}
+    processChosakuImgsData(data);
+    recs.forEach(rc=>{if(window._imgDirty.has(rc.id))refreshChosakuView(rc);});
+  }
+}
 // Firebaseからrecsを再読込する前に、メモリ上の画像を退避・復元する
 function keepChosakuImgs(fn){
   const m=new Map();
@@ -1069,10 +1127,9 @@ function loadFromFirebase(){
         // localStorageも更新
         try{localStorage.setItem(SK,JSON.stringify(recs));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){}
         // 画像データを別パスから取得
-        attachChosakuImgsFromFirebase().catch(()=>{}).then(()=>{
-          rebuild();
-          showToast('✅ Firebaseからデータを読み込みました（'+recs.length+'件）','success');
-        });
+        rebuild();
+        showToast('✅ Firebaseからデータを読み込みました（'+recs.length+'件）','success');
+        loadChosakuImgsProgressive(false).catch(e=>console.warn(e));
       } else {
         showToast('Firebaseにデータがありません。localStorageのデータを使用します。','warn');
       }
@@ -3826,6 +3883,8 @@ function renderChosakuSection(r){
       h+='</div>';
     }
     h+='</div>';
+  } else if(window._imgLoading&&window._imgLoading.has(rid)){
+    h+='<div style="font-size:12px;color:var(--text3);margin-bottom:6px">⏳ 画像を読み込み中…</div>';
   } else {
     h+='<div style="font-size:12px;color:var(--text3);margin-bottom:6px">未添付</div>';
   }
@@ -4083,28 +4142,41 @@ function addChosakuImgBtn(input){
       return;
     }
     watchFbConnection();
-    if(window._fbConnected===false)setImgStatus(id,'saving','⏳ Firebaseのサーバーに接続できていません。接続を待って保存します…（このままページを閉じないでください）');
-    else setImgStatus(id,'saving','⏳ Firebaseに保存しています…（完了までページを閉じないでください）');
+    const sizeMB=(JSON.stringify(rec._chosakuImgs).length/1024/1024).toFixed(1);
+    const t0=Date.now();
+    const sec=()=>Math.round((Date.now()-t0)/1000);
+    // 段階ごとに経過秒数を表示し続ける（どこで止まっているか分かるように）
+    let stage='send';
+    const tick=setInterval(()=>{
+      if(stage==='send'){
+        const conn=window._fbConnected===false?'サーバー未接続・接続待ち':'送信中';
+        setImgStatus(id,'saving','⏳ Firebaseへ'+conn+'…（'+sizeMB+'MB・'+sec()+'秒経過）完了までページを閉じないでください');
+      }else if(stage==='verify'){
+        setImgStatus(id,'saving','⏳ 保存は受け付けられました。読み戻して確認中…（'+sec()+'秒経過）');
+      }
+    },1000);
+    const stop=()=>{clearInterval(tick);window._imgSaving=false;};
+    setImgStatus(id,'saving','⏳ Firebaseへ送信中…（'+sizeMB+'MB）完了までページを閉じないでください');
     window._imgSaving=true;
     save();
-    const timeout=new Promise(res=>setTimeout(()=>res('timeout'),30000));
-    Promise.race([window._lastImgSave||Promise.resolve(false),timeout]).then(ok=>{
+    const withTimeout=(p,ms)=>Promise.race([p,new Promise(res=>setTimeout(()=>res('timeout'),ms))]);
+    withTimeout(window._lastImgSave||Promise.resolve(false),60000).then(ok=>{
       if(ok==='timeout'){
-        setImgStatus(id,'error','⚠️ 30秒たってもFirebaseから応答がありません。ネット接続を確認してください。接続が戻れば自動で保存されますが、それまでページを閉じないでください。');
-        (window._lastImgSave||Promise.resolve(false)).then(ok2=>{if(ok2)verify();});
+        stop();
+        setImgStatus(id,'error','⚠️ 60秒たってもFirebaseが保存を受け付けません（'+sizeMB+'MB・接続状態：'+(window._fbConnected===false?'未接続':window._fbConnected?'接続中':'不明')+'）。ネット接続を確認してください。');
         return;
       }
-      if(!ok){window._imgSaving=false;setImgStatus(id,'error','⚠️ Firebaseへの保存に失敗しました。画面右下のメッセージかブラウザのコンソールでエラー内容を確認してください。');return;}
-      verify();
-    });
-    function verify(){
-      window._fbGet(window._fbRef(window._fbDb,'anken/imgs/'+chosakuImgKey(id))).then(sn=>{
-        window._imgSaving=false;
+      if(!ok){stop();setImgStatus(id,'error','⚠️ Firebaseへの保存に失敗しました（'+sec()+'秒）。画面右下のメッセージかブラウザのコンソールでエラー内容を確認してください。');return;}
+      // Firebaseのサーバーが書き込みを受け付けた＝保存完了。念のため読み戻しも行う（止まっても保存自体は済んでいる）
+      stage='verify';
+      withTimeout(fbRestGet('anken/imgs/'+chosakuImgKey(id)).then(v=>({val:()=>v})),15000).then(sn=>{
+        stop();
+        if(sn==='timeout'){setImgStatus(id,'ok','✅ Firebaseに保存しました（'+rec._chosakuImgs.length+'枚・'+sec()+'秒）※読み戻し確認は応答なし');return;}
         let n=0;try{n=JSON.parse(sn.val()).length;}catch(e){}
-        if(n===rec._chosakuImgs.length)setImgStatus(id,'ok','✅ Firebaseに保存しました（'+n+'枚）'+failNote);
+        if(n===rec._chosakuImgs.length)setImgStatus(id,'ok','✅ Firebaseに保存しました（'+n+'枚・確認済み・'+sec()+'秒）'+failNote);
         else setImgStatus(id,'error','⚠️ 保存を確認できませんでした（Firebase上 '+n+'枚／画面 '+rec._chosakuImgs.length+'枚）');
-      }).catch(e=>{window._imgSaving=false;setImgStatus(id,'error','⚠️ 保存の確認に失敗しました：'+(e&&e.message||e));});
-    }
+      }).catch(e=>{stop();setImgStatus(id,'ok','✅ Firebaseに保存しました（読み戻し確認でエラー：'+(e&&e.message||e)+'）');});
+    });
   };
   files.forEach(function(file){
     const reader=new FileReader();
@@ -5180,7 +5252,7 @@ function startApp(){
         if(serverTime&&serverTime>window._lastSyncTime){
           window._lastSyncTime=serverTime;
           // 他のデバイスが更新した場合のみ再読込
-          g(r(db,'anken/recs')).then(s2=>{if(s2.val()){keepChosakuImgs(()=>{recs=[];loadFromData(s2.val(),'');});attachChosakuImgsFromFirebase().catch(()=>{}).then(()=>rebuild());}});
+          g(r(db,'anken/recs')).then(s2=>{if(s2.val()){keepChosakuImgs(()=>{recs=[];loadFromData(s2.val(),'');});rebuild();loadChosakuImgsProgressive(true).catch(()=>{});}});
         }
       }).catch(()=>{});
     }
