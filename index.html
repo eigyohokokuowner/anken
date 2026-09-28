@@ -967,11 +967,11 @@ function uploadToFirebase(){
 }
 function restoreChosakuImgs(){/* Firebase保存のため不要 */}
 // ─── 入札調書画像の保存先キー ─────────────────
-// 案件IDはbase64のため「/」を含むことがあり、そのままFirebaseのパスに使うと
-// 階層が分かれて保存され、読み込み時に案件と一致せず画像が消えていた。
-// 「/」を「_」に置き換えたキーで保存する。
+// 画像は anken/imgs/<キー> に保存する。Firebaseのパスで区切り文字になる「/」が
+// 万一IDに含まれても階層が分かれないよう、「_」に置き換えたキーを使う（念のための保護）。
 function chosakuImgKey(id){return String(id).replace(/\//g,'_');}
 window._imgDirty=window._imgDirty||new Set();// 保存が必要な画像の案件ID
+window._imgDeleteKeys=window._imgDeleteKeys||new Set();// 移し替え済みで削除する旧キー
 // Firebaseの anken/imgs を読み込み、各案件に画像を戻す（旧形式の階層化データも救済する）
 function attachChosakuImgsFromFirebase(){
   const db=window._fbDb,r=window._fbRef,g=window._fbGet;
@@ -993,6 +993,28 @@ function attachChosakuImgsFromFirebase(){
       });
     };
     walk(data,'','');
+    // 案件名の修正などで案件IDが変わり、どの案件にも一致しなくなった画像を工事名で探して戻す
+    const orphanKeys=[];
+    const collect=(obj,path)=>Object.keys(obj).forEach(k=>{
+      const v=obj[k],full=path?path+'/'+k:k;
+      if(typeof v==='string'){if(!byKey.get(chosakuImgKey(full)))orphanKeys.push([full,v]);}
+      else if(v&&typeof v==='object')collect(v,full);
+    });
+    collect(data,'');
+    const normName=t=>String(t||'').normalize('NFKC').replace(/[（(][^）)]*(内容変更|契約方式変更|追加工事)[^）)]*[）)]/g,'').replace(/[\s\u3000]/g,'');
+    orphanKeys.forEach(([key,v])=>{
+      let orgName='';
+      try{const b=key.replace(/_/g,'/');orgName=decodeURIComponent(atob(b+'==='.slice((b.length+3)%4)));}catch(e){return;}// 案件ID（mkId）を元の「発注機関|工事名」に戻す
+      const name=normName(orgName.slice(orgName.indexOf('|')+1));
+      if(!name)return;
+      const cands=recs.filter(rc=>!(rc._chosakuImgs&&rc._chosakuImgs.length)&&(normName(rc.name)===name||normName(rc._koukokuName)===name));
+      if(cands.length!==1)return;
+      try{const arr=JSON.parse(v);if(!Array.isArray(arr)||!arr.length)return;cands[0]._chosakuImgs=arr;}catch(e){return;}
+      window._imgDirty.add(cands[0].id);
+      window._imgDeleteKeys.add(key);
+      console.log('入札調書画像を工事名で復元:',cands[0].name);
+    });
+    if(window._imgDeleteKeys.size&&window._loggedIn&&!legacyTop.size)saveChosakuImgs();
     // 旧形式（階層化）で保存されていた画像は、新しいキーに保存し直してから旧データを削除
     if(legacyTop.size&&window._loggedIn){
       saveChosakuImgs().then(()=>{
@@ -1005,18 +1027,26 @@ function attachChosakuImgsFromFirebase(){
 }
 // 変更のあった案件の画像だけFirebaseに保存（空になった案件は削除）
 function saveChosakuImgs(){
-  if(!(window._fbReady&&window._fbDb&&window._loggedIn))return Promise.resolve();
+  if(!(window._fbReady&&window._fbDb&&window._loggedIn))return (window._lastImgSave=Promise.resolve(false));
   const db=window._fbDb,r=window._fbRef,s=window._fbSet;
   const ids=[...window._imgDirty];
-  if(!ids.length)return Promise.resolve();
-  return Promise.all(ids.map(id=>{
+  if(!ids.length&&!window._imgDeleteKeys.size)return (window._lastImgSave=Promise.resolve(true));
+  const p=Promise.all(ids.map(id=>{
     const rec=recs.find(rc=>rc.id===id);
     const val=rec&&rec._chosakuImgs&&rec._chosakuImgs.length?JSON.stringify(rec._chosakuImgs):null;
     return s(r(db,'anken/imgs/'+chosakuImgKey(id)),val).then(()=>{window._imgDirty.delete(id);});
-  })).catch(e=>{
+  })).then(()=>{
+    // 新しいキーへの保存が済んでから旧キーを削除
+    const del=[...window._imgDeleteKeys].filter(k=>!recs.some(rc=>chosakuImgKey(rc.id)===k&&rc._chosakuImgs&&rc._chosakuImgs.length));
+    window._imgDeleteKeys.clear();
+    return Promise.all(del.map(k=>s(r(db,'anken/imgs/'+k),null).catch(()=>{})));
+  }).then(()=>true).catch(e=>{
     console.warn('画像保存エラー:',e);
     showToast('⚠️ 入札調書画像の保存に失敗しました：'+(e&&e.message||e),'warn');
+    return false;
   });
+  window._lastImgSave=p;
+  return p;
 }
 // Firebaseからrecsを再読込する前に、メモリ上の画像を退避・復元する
 function keepChosakuImgs(fn){
@@ -1995,9 +2025,12 @@ function importSuigenHacchu(rows,hi,fname){
   function normalizeTargetName(target,cleanName){
     if(target.name!==cleanName){
       seen.delete(target.id);
+      const oldId=target.id;
       target.name=cleanName;
       target.id=mkId(target);
       seen.add(target.id);
+      // IDが変わるので入札調書画像も新しいIDへ移す
+      if(target._chosakuImgs&&target._chosakuImgs.length&&oldId!==target.id){window._imgDirty.add(target.id);window._imgDeleteKeys.add(chosakuImgKey(oldId));}
       return true;
     }
     return false;
@@ -2653,7 +2686,7 @@ function deleteRec(id){
   if(window._fbReady&&window._fbDb&&window._canEdit){
     const db=window._fbDb,r2=window._fbRef,s=window._fbSet;
     // imgs も削除
-    s(r2(db,'anken/imgs/'+id),null).catch(()=>{});
+    s(r2(db,'anken/imgs/'+chosakuImgKey(id)),null).catch(()=>{});
   }
   save();rebuild();
   showToast('案件を削除しました','success');
@@ -4025,7 +4058,20 @@ function addChosakuImgBtn(input){
           const div=document.getElementById('chos-'+id);
           if(div)div.innerHTML=renderChosakuSection(rec);
           save();
-          showToast(files.length+'枚追加しました','success');
+          if(!(window._fbReady&&window._fbDb&&window._loggedIn)){
+            showToast('⚠️ Firebaseに接続されていないため、画像は保存されていません（リロードで消えます）','warn');
+          }else{
+            showToast('画像を保存中...','');
+            (window._lastImgSave||Promise.resolve(false)).then(ok=>{
+              if(!ok)return;// 失敗時は saveChosakuImgs 側で警告を表示
+              // 実際に書き込めたか読み戻して確認
+              window._fbGet(window._fbRef(window._fbDb,'anken/imgs/'+chosakuImgKey(id))).then(sn=>{
+                const v=sn.val();let n=0;try{n=JSON.parse(v).length;}catch(e){}
+                if(n===rec._chosakuImgs.length)showToast('✅ 画像'+files.length+'枚をFirebaseに保存しました','success');
+                else showToast('⚠️ 画像の保存を確認できませんでした（保存数 '+n+'／'+rec._chosakuImgs.length+'）','warn');
+              }).catch(e=>showToast('⚠️ 画像の保存確認に失敗しました：'+(e&&e.message||e),'warn'));
+            });
+          }
         }
       });
     };
