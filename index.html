@@ -1531,6 +1531,50 @@ function renderCompanyHistory(){
     <div><div style="font-size:11px;color:var(--text3)">平均落札額</div><div style="font-size:22px;font-weight:700;color:#7c3aed">${avgPriceStr}</div></div>
   </div>`;
 
+  // 市場分析用：選択した会社ごとの 参加工事数／落札数／失注数／落札率／平均落札額
+  // 参加工事数は「落札者」または「入札参加者」に載っている工事、落札は落札者に載っている工事で数える
+  if(useMarket){
+    const toYen=p=>{if(!p)return 0;const m=p.replace(/,/g,'').replace(/（[^）]*）/g,'').match(/\d+/);return m?parseInt(m[0]):0;};
+    const fmtYen=v=>v>=100000000?(v/100000000).toFixed(1)+'億':v>=1000000?Math.round(v/1000000)+'百万':'—';
+    const base=recs.filter(r=>{
+      if(r._status!=='kaisatsu')return false;
+      if(fromD||toD){
+        const d=r._kaisatsuDate?new Date(r._kaisatsuDate.replace(/\//g,'-')+'T00:00:00'):null;
+        if(!d)return false;
+        if(fromD&&d<fromD)return false;
+        if(toD&&d>toD)return false;
+      }
+      if(selOrgs.length&&!selOrgs.includes(r.orgCategory))return false;
+      if(selScales.length&&!priceMatch(r.rakusatsuPrice))return false;
+      return true;
+    });
+    const TH='padding:6px 10px;font-size:11px;font-weight:600;color:var(--text3);text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)';
+    const TD='padding:6px 10px;font-size:13px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)';
+    let rows='';
+    checkedMarketIdx.forEach(i=>{
+      const g=JUCHU_COMPANIES[i];
+      const win=r=>marketPresetMatch(r.rakusatsuSha,g);
+      const joined=base.filter(r=>win(r)||(r._bidders&&r._bidders.some(b=>marketPresetMatch(b.name,g))));
+      const wins=joined.filter(win);
+      const t=joined.length,w=wins.length;
+      const pv=wins.map(r=>toYen(r.rakusatsuPrice)).filter(v=>v>0);
+      const avg=pv.length?Math.round(pv.reduce((a,b)=>a+b,0)/pv.length):0;
+      rows+='<tr>'+
+        '<td style="'+TD+';text-align:left;font-weight:600"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+g.color+';margin-right:6px;vertical-align:middle"></span>'+esc(g.label)+'</td>'+
+        '<td style="'+TD+'">'+t+'件</td>'+
+        '<td style="'+TD+';color:#0f6e56;font-weight:600">'+w+'件</td>'+
+        '<td style="'+TD+';color:#dc2626">'+(t-w)+'件</td>'+
+        '<td style="'+TD+';color:#1a4fa0;font-weight:600">'+(t?Math.round(w/t*100):0)+'%</td>'+
+        '<td style="'+TD+';color:#7c3aed">'+fmtYen(avg)+'</td>'+
+        '</tr>';
+    });
+    html+='<div style="background:#f0f4ff;border-radius:8px;padding:10px 16px;margin-bottom:16px">'+
+      '<div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">会社別の集計</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
+      '<thead><tr><th style="'+TH+';text-align:left">会社</th><th style="'+TH+'">参加工事数</th><th style="'+TH+'">落札数</th><th style="'+TH+'">失注数</th><th style="'+TH+'">落札率</th><th style="'+TH+'">平均落札額</th></tr></thead>'+
+      '<tbody>'+rows+'</tbody></table></div></div>';
+  }
+
   if(!matched.length){
     html+='<div style="color:var(--text3);text-align:center;padding:40px">該当する工事が見つかりませんでした</div>';
   } else {
@@ -1582,11 +1626,13 @@ function toggleChCompanyDrop(){
   }
 }
 function chFilterCompanies(q){
-  const query=(q||'').trim().toLowerCase();
+  // 全角／半角・大文字／小文字・空白の違いを無視して検索（例：IHI／ＩＨＩ／ihi は同じ扱い）
+  const norm=t=>String(t||'').normalize('NFKC').toLowerCase().replace(/[\s\u3000]/g,'');
+  const query=norm(q);
   const labels=document.querySelectorAll('#chCompanyList .ch-company-label');
   let visibleCount=0;
   labels.forEach(l=>{
-    const match=!query||(l.dataset.name||'').includes(query);
+    const match=!query||norm(l.dataset.name).includes(query);
     l.style.display=match?'flex':'none';
     if(match)visibleCount++;
   });
