@@ -496,13 +496,14 @@
           </div>
         </div>
       </div>
-      <select class="filter" id="dateRangeFilter" onchange="applyFilters()">
+      <!-- 更新日・落札会社の絞り込みは非表示（処理側で参照しているため要素は残す。未選択＝絞り込みなし） -->
+      <select class="filter" id="dateRangeFilter" onchange="applyFilters()" style="display:none!important">
         <option value="">更新日：全期間 ▾</option>
         <option value="1w">直近1週間</option>
         <option value="2w">直近2週間</option>
         <option value="1m">直近1か月</option>
       </select>
-      <div style="position:relative;display:inline-block" class="pc-only">
+      <div style="position:relative;display:none!important" class="pc-only">
         <button id="rakusatsuFilterBtn" onclick="toggleDropdown('rakusatsuDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:110px;text-align:left">落札会社：すべて ▾</button>
         <div id="rakusatsuDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:200px;margin-top:2px;max-height:300px;overflow-y:auto">
           <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer"><input type="checkbox" value="__none__" onchange="applyRakusatsuFilter()"> ― 未記載</label>
