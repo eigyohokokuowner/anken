@@ -970,7 +970,17 @@ function restoreChosakuImgs(){/* Firebase保存のため不要 */}
 // ─── 入札調書画像の保存先キー ─────────────────
 // 画像は anken/imgs/<キー> に保存する。Firebaseのパスで区切り文字になる「/」が
 // 万一IDに含まれても階層が分かれないよう、「_」に置き換えたキーを使う（念のための保護）。
-function chosakuImgKey(id){return String(id).replace(/\//g,'_');}
+// Firebaseのキーは768バイトまで。案件IDは「発注機関|工事名」をエンコードしたもので、
+// 工事名が長いと768バイトを超え、保存時にエラーになっていた（例：筑後川下流の排水路設備工事は780バイト）。
+// 700文字を超えるIDは、IDから計算したハッシュ値（h_で始まる短いキー）を使う。
+function chosakuImgKey(id){
+  const k=String(id).replace(/\//g,'_').replace(/[.#$\[\]]/g,c=>'%'+c.charCodeAt(0).toString(16));
+  if(k.length<=700)return k;
+  const h=(str,seed)=>{let h1=0xdeadbeef^seed,h2=0x41c6ce57^seed;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+    return (h2>>>0).toString(16).padStart(8,'0')+(h1>>>0).toString(16).padStart(8,'0');};
+  return 'h_'+h(k,1)+h(k,2)+'_'+k.length;
+}
 window._imgDirty=window._imgDirty||new Set();// 保存が必要な画像の案件ID
 window._imgDeleteKeys=window._imgDeleteKeys||new Set();// 移し替え済みで削除する旧キー
 // Firebaseの anken/imgs を読み込み、各案件に画像を戻す（旧形式の階層化データも救済する）
@@ -1047,7 +1057,8 @@ function saveChosakuImgs(){
     return Promise.all(del.map(k=>s(r(db,'anken/imgs/'+k),null).catch(()=>{})));
   }).then(()=>true).catch(e=>{
     console.warn('画像保存エラー:',e);
-    showToast('⚠️ 入札調書画像の保存に失敗しました：'+(e&&e.message||e),'warn');
+    window._lastImgError=(e&&e.message)||String(e);
+    showToast('⚠️ 入札調書画像の保存に失敗しました：'+window._lastImgError,'warn');
     return false;
   });
   window._lastImgSave=p;
@@ -4222,7 +4233,7 @@ function addChosakuImgBtn(input){
         setImgStatus(id,'error','⚠️ 60秒たってもFirebaseが保存を受け付けません（'+sizeMB+'MB・接続状態：'+(window._fbConnected===false?'未接続':window._fbConnected?'接続中':'不明')+'）。ネット接続を確認してください。');
         return;
       }
-      if(!ok){stop();setImgStatus(id,'error','⚠️ Firebaseへの保存に失敗しました（'+sec()+'秒）。画面右下のメッセージかブラウザのコンソールでエラー内容を確認してください。');return;}
+      if(!ok){stop();setImgStatus(id,'error','⚠️ Firebaseへの保存に失敗しました（'+sec()+'秒）：'+(window._lastImgError||'原因不明'));return;}
       // Firebaseのサーバーが書き込みを受け付けた＝保存完了。念のため読み戻しも行う（止まっても保存自体は済んでいる）
       stage='verify';
       withTimeout(fbRestGet('anken/imgs/'+chosakuImgKey(id)).then(v=>({val:()=>v})),15000).then(sn=>{
