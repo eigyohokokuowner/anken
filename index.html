@@ -1534,7 +1534,9 @@ function renderCompanyHistory(){
       html+='<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px;background:'+(isRakusatsu?'#f0fdf4':'var(--surface)')+'">'+
         '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:'+(imgs?'12px':'0')+'">'+
         '<div style="flex:1">'+
-        '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">'+esc(r._koukokuName||r.name)+'</div>'+
+        '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;display:flex;align-items:center;flex-wrap:wrap;gap:8px"><span>'+esc(r._koukokuName||r.name)+'</span>'+
+          (/随意/.test(r.method||'')?'<span title="入札契約方式：'+escH(r.method)+'" style="flex-shrink:0;background:#fff7e6;color:#b45309;border:1px solid #f5c67a;padding:1px 8px;border-radius:12px;font-size:11px;font-weight:600;white-space:nowrap">随意契約</span>':'')+
+          '</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+esc(r.orgCategory||r.org||'')+' ／ 開札日：'+esc(r._kaisatsuDate||'—')+(r.scale?' ／ '+esc(r.scale):'')+'</div>'+
         '</div>'+
         '<div style="flex-shrink:0">'+resultLabel+'</div>'+
