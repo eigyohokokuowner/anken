@@ -1281,6 +1281,12 @@ function renderJuchu(){
   document.getElementById('juchuContent').innerHTML=html;
 }
 
+// 会社名の表記ゆれ（全角／半角、（株）・株式会社の有無、空白）を吸収した比較用キー
+function normCompanyName(n){
+  return String(n||'').normalize('NFKC')
+    .replace(/株式会社|有限会社|合同会社|\(株\)|\(有\)|\(同\)|㈱|㈲/g,'')
+    .replace(/[\s\u3000]/g,'');
+}
 function showCompanyHistory(){
   // 入札参加者が登録されている会社名一覧を収集
   const companySet=new Set();
@@ -1288,6 +1294,8 @@ function showCompanyHistory(){
     if(r._bidders)r._bidders.forEach(b=>{if(b.name)companySet.add(b.name);});
     if(r.rakusatsuSha)companySet.add(r.rakusatsuSha);
   });
+  // 表記ゆれで同じ会社が重複しないよう、比較用キーが同じものは最初の表記に集約
+  {const seen=new Set();for(const n of [...companySet]){const k=normCompanyName(n);if(seen.has(k))companySet.delete(n);else seen.add(k);}}
   const companies=[...companySet].sort();
 
   const div=document.createElement('div');
@@ -1480,6 +1488,10 @@ function renderCompanyHistory(){
     });
   };
 
+  // 落札／失注の判定：落札者欄に選択会社が載っていれば落札、入札参加者にのみ載っていれば失注
+  // （全角・半角や（株）の有無など表記ゆれは正規化して比較）
+  const selNorm=new Set(selected.map(normCompanyName));
+  const isWinner=r=>!!r.rakusatsuSha&&selNorm.has(normCompanyName(r.rakusatsuSha));
   const matched=recs.filter(r=>{
     if(r._status!=='kaisatsu')return false;
     if(fromD||toD){
@@ -1491,13 +1503,12 @@ function renderCompanyHistory(){
     if(selOrgs.length&&!selOrgs.includes(r.orgCategory))return false;
     if(selScales.length&&!priceMatch(r.rakusatsuPrice))return false;
     if(useMarket)return selected.includes(r.rakusatsuSha);// 市場分析用：落札会社のみで判定
-    const isBidder=r._bidders&&r._bidders.some(b=>selected.includes(b.name));
-    const isRakusatsu=selected.includes(r.rakusatsuSha);
-    return isBidder||isRakusatsu;
+    const isBidder=r._bidders&&r._bidders.some(b=>selNorm.has(normCompanyName(b.name)));
+    return isBidder||isWinner(r);
   }).sort((a,b)=>(b._kaisatsuDate||'').localeCompare(a._kaisatsuDate||''));
 
   const total=matched.length;
-  const rakusatsuRecs=matched.filter(r=>selected.includes(r.rakusatsuSha));
+  const rakusatsuRecs=matched.filter(isWinner);
   const rakusatsuCount=rakusatsuRecs.length;
   const rate=total>0?Math.round(rakusatsuCount/total*100):0;
   // 平均落札金額（rakusatsuPriceから数値抽出）
@@ -1524,7 +1535,7 @@ function renderCompanyHistory(){
     html+='<div style="color:var(--text3);text-align:center;padding:40px">該当する工事が見つかりませんでした</div>';
   } else {
     matched.forEach(r=>{
-      const isRakusatsu=selected.includes(r.rakusatsuSha);
+      const isRakusatsu=isWinner(r);
       const priceStr=r.rakusatsuPrice?r.rakusatsuPrice:'';
       const resultLabel=isRakusatsu
         ?'<span style="display:inline-flex;align-items:center;gap:6px">'+(priceStr?'<span style="font-size:12px;color:#0f6e56;font-weight:600">'+esc(priceStr)+'</span>':'')+'<span style="background:#0f6e56;color:white;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600">✅ 落札</span></span>'
