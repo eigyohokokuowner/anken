@@ -945,10 +945,10 @@ function uploadToFirebase(){
     window._lastSyncTime=now;
     showToast('⬆ Firebaseに送信中...','');
     Promise.all([
-      s(r(db,'anken/recs'),JSON.stringify(recs)),
-      s(r(db,'anken/seen'),JSON.stringify([...seen])),
-      s(r(db,'anken/pending'),localStorage.getItem('nyusatsu_pending_koukoku')||'[]'),
-      s(r(db,'anken/lastUpdate'),now)
+      fbWriteRecsJson(JSON.stringify(recs.map(rec=>{if(!rec._chosakuImgs)return rec;const c=Object.assign({},rec);delete c._chosakuImgs;return c;}))),
+      fbSafeSet('anken/seen',JSON.stringify([...seen])),
+      fbSafeSet('anken/pending',localStorage.getItem('nyusatsu_pending_koukoku')||'[]'),
+      fbSafeSet('anken/lastUpdate',now)
     ]).then(()=>{
       showToast('✅ Firebaseに送信しました（'+recs.length+'件）','success');
     }).catch(e=>{
@@ -960,9 +960,9 @@ function uploadToFirebase(){
     const now=new Date().toISOString();
     window._lastSyncTime=now;
     Promise.all([
-      s(r(db,'anken/recs'),JSON.stringify(recs)),
-      s(r(db,'anken/seen'),JSON.stringify([...seen])),
-      s(r(db,'anken/lastUpdate'),now)
+      fbWriteRecsJson(JSON.stringify(recs.map(rec=>{if(!rec._chosakuImgs)return rec;const c=Object.assign({},rec);delete c._chosakuImgs;return c;}))),
+      fbSafeSet('anken/seen',JSON.stringify([...seen])),
+      fbSafeSet('anken/lastUpdate',now)
     ]).then(()=>showToast('✅ 送信しました','success')).catch(e=>showToast('送信エラー','warn'));
   });
 }
@@ -1039,7 +1039,7 @@ function saveChosakuImgs(){
   const p=Promise.all(ids.map(id=>{
     const rec=recs.find(rc=>rc.id===id);
     const val=rec&&rec._chosakuImgs&&rec._chosakuImgs.length?JSON.stringify(rec._chosakuImgs):null;
-    return s(r(db,'anken/imgs/'+chosakuImgKey(id)),val).then(()=>{window._imgDirty.delete(id);});
+    return fbSafeSet('anken/imgs/'+chosakuImgKey(id),val).then(()=>{window._imgDirty.delete(id);});
   })).then(()=>{
     // 新しいキーへの保存が済んでから旧キーを削除
     const del=[...window._imgDeleteKeys].filter(k=>!recs.some(rc=>chosakuImgKey(rc.id)===k&&rc._chosakuImgs&&rc._chosakuImgs.length));
@@ -1113,12 +1113,73 @@ function keepChosakuImgs(fn){
   fn();
   recs.forEach(rc=>{if(!rc._chosakuImgs&&m.has(rc.id))rc._chosakuImgs=m.get(rc.id);});
 }
+// ─── Firebase書き込みの共通処理 ─────────────────
+// Firebaseのset()は、値が大きすぎる等の場合に「例外」を投げる（Promiseのエラーにならない）。
+// 以前はこの例外で save() が途中で止まり、その後の画像保存が実行されないまま
+// 何のエラーも出ていなかった。例外もPromiseのエラーとして扱う。
+function fbSafeSet(path,val){
+  try{return window._fbSet(window._fbRef(window._fbDb,path),val);}
+  catch(e){return Promise.reject(e);}
+}
+// 案件データ（anken/recs）は1つの文字列で保存していたが、Firebaseは1つの値を10MBまでしか
+// 保存できない。案件が増えて上限を超えたため、分割して保存する。
+//   anken/recsParts/<版>/<0,1,2…> に分割した文字列、anken/recsMeta に {ver,count}
+const RECS_CHUNK=1500000;// 1分割あたりの文字数（日本語でも約4.5MB以下）
+function fbWriteRecsJson(json){
+  const ver=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const parts=[];
+  for(let i=0;i<json.length;i+=RECS_CHUNK)parts.push(json.slice(i,i+RECS_CHUNK));
+  if(!parts.length)parts.push('[]');
+  return Promise.all(parts.map((p,i)=>fbSafeSet('anken/recsParts/'+ver+'/'+i,p)))
+    .then(()=>fbSafeSet('anken/recsMeta',{ver,count:parts.length,at:new Date().toISOString()}))
+    .then(()=>{
+      // 古い版を削除（他の端末の版も含めて、今の版以外）
+      const cleanup=typeof fbRestGet==='function'
+        ?fbRestGet('anken/recsParts','shallow=true').then(keys=>Promise.all(Object.keys(keys||{}).filter(k=>k!==ver).map(k=>fbSafeSet('anken/recsParts/'+k,null).catch(()=>{}))))
+        :Promise.resolve();
+      cleanup.catch(()=>{});
+      // HTTPでの一覧取得ができない環境でも、直前の版は確実に削除する
+      if(window._lastRecsVer&&window._lastRecsVer!==ver)fbSafeSet('anken/recsParts/'+window._lastRecsVer,null).catch(()=>{});
+      window._lastRecsVer=ver;
+      // 旧形式の anken/recs も、10MBに収まる間は更新しておく（古いファイルを使う端末向け）
+      if(new Blob([json]).size<9500000)fbSafeSet('anken/recs',json).catch(()=>{});
+    });
+}
+// 案件データの書き込みは順番に1つずつ（連続で保存されたときに古い内容で上書きしないように）
+let _recsWriting=false,_recsWritePending=false;
+function queueRecsWrite(){
+  if(_recsWriting){_recsWritePending=true;return;}
+  _recsWriting=true;_recsWritePending=false;
+  const json=JSON.stringify(recs.map(rec=>{if(!rec._chosakuImgs)return rec;const c=Object.assign({},rec);delete c._chosakuImgs;return c;}));
+  fbWriteRecsJson(json).catch(e=>{
+    console.warn('案件データの保存エラー:',e);
+    showToast('⚠️ 案件データをFirebaseに保存できませんでした：'+(e&&e.message||e),'warn');
+  }).then(()=>{
+    _recsWriting=false;
+    if(_recsWritePending)queueRecsWrite();
+  });
+}
+// 案件データを読み込む（分割形式→なければ旧形式）。文字列（JSON）を返す
+function fbReadRecsJson(){
+  const db=window._fbDb,r=window._fbRef,g=window._fbGet;
+  return g(r(db,'anken/recsMeta')).then(ms=>{
+    const meta=ms.val();
+    if(!meta||!meta.ver)return g(r(db,'anken/recs')).then(sn=>sn.val());
+    window._lastRecsVer=meta.ver;
+    return g(r(db,'anken/recsParts/'+meta.ver)).then(ps=>{
+      const v=ps.val();
+      if(!v)return g(r(db,'anken/recs')).then(sn=>sn.val());
+      const arr=Array.isArray(v)?v:Object.keys(v).sort((a,b)=>a-b).map(k=>v[k]);
+      if(arr.length!==meta.count||arr.some(x=>typeof x!=='string'))throw new Error('分割データが不完全です');
+      return arr.join('');
+    });
+  });
+}
 function loadFromFirebase(){
   if(!window._fbReady||!window._fbDb)return;
   const db=window._fbDb,r=window._fbRef,g=window._fbGet;
   showToast('🔄 Firebaseからデータを読み込み中...','');
-  g(r(db,'anken/recs')).then(snap=>{
-    const recsData=snap.val();
+  fbReadRecsJson().then(recsData=>{
     g(r(db,'anken/seen')).then(snap2=>{
       const seenData=snap2.val();
       if(recsData){
@@ -1150,19 +1211,14 @@ function save(){
   try{localStorage.setItem(SK,JSON.stringify(recs.map(rec=>{if(!rec._chosakuImgs)return rec;const c=Object.assign({},rec);delete c._chosakuImgs;return c;})));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){console.warn('localStorage保存エラー:',e);}
   // Firebaseに保存（ログイン済みのみ）
   if(window._fbReady&&window._fbDb&&window._loggedIn){
-    const db=window._fbDb,r=window._fbRef,s=window._fbSet;
-    // 画像データをrecsから分離して別パスに保存（容量対策）
-    const recsNoImgs=recs.map(rec=>{
-      const copy=Object.assign({},rec);
-      delete copy._chosakuImgs;
-      return copy;
-    });
-    s(r(db,'anken/recs'),JSON.stringify(recsNoImgs)).catch(e=>console.warn('Firebase save error:',e));
-    // 画像データは別パスに保存（追加・削除があった案件のみ）
+    // 画像データは別パスに保存（追加・削除があった案件のみ）。案件データより先に実行する
     saveChosakuImgs();
-    s(r(db,'anken/seen'),JSON.stringify([...seen])).catch(()=>{});
-    s(r(db,'anken/pending'),localStorage.getItem('nyusatsu_pending_koukoku')||'[]').catch(()=>{});
-    s(r(db,'anken/lastUpdate'),new Date().toISOString()).catch(()=>{});
+    // 案件データ（画像を除く）は分割して保存
+    queueRecsWrite();
+    fbSafeSet('anken/seen',JSON.stringify([...seen])).catch(e=>console.warn('seen保存エラー:',e));
+    let pend='[]';try{pend=localStorage.getItem('nyusatsu_pending_koukoku')||'[]';}catch(e){}
+    fbSafeSet('anken/pending',pend).catch(()=>{});
+    fbSafeSet('anken/lastUpdate',new Date().toISOString()).catch(()=>{});
   }
 }
 function mkId(r){return btoa(encodeURIComponent((r.org||'')+'|'+(r.name||''))).replace(/=/g,'');}
@@ -4422,6 +4478,8 @@ function execClearAll(){
   if(window._fbReady&&window._fbDb){
     const db=window._fbDb,r=window._fbRef,s=window._fbSet;
     s(r(db,'anken/recs'),'[]').catch(()=>{});
+    s(r(db,'anken/recsMeta'),null).catch(()=>{});
+    s(r(db,'anken/recsParts'),null).catch(()=>{});
     s(r(db,'anken/seen'),'[]').catch(()=>{});
     s(r(db,'anken/pending'),'[]').catch(()=>{});
     s(r(db,'anken/lastUpdate'),new Date().toISOString()).catch(()=>{});
@@ -5224,8 +5282,7 @@ function startApp(){
   function onFirebaseReady(){
     verifySessionStillValid();
     const db=window._fbDb,r=window._fbRef,g=window._fbGet;
-    g(r(db,'anken/recs')).then(snap=>{
-      const fbData=snap.val();
+    fbReadRecsJson().then(fbData=>{
       if(fbData){
         // Firebaseにデータあり→読み込む
         loadFromFirebase();
@@ -5252,7 +5309,7 @@ function startApp(){
         if(serverTime&&serverTime>window._lastSyncTime){
           window._lastSyncTime=serverTime;
           // 他のデバイスが更新した場合のみ再読込
-          g(r(db,'anken/recs')).then(s2=>{if(s2.val()){keepChosakuImgs(()=>{recs=[];loadFromData(s2.val(),'');});rebuild();loadChosakuImgsProgressive(true).catch(()=>{});}});
+          fbReadRecsJson().then(v2=>{if(v2){keepChosakuImgs(()=>{recs=[];loadFromData(v2,'');});rebuild();loadChosakuImgsProgressive(true).catch(()=>{});}});
         }
       }).catch(()=>{});
     }
