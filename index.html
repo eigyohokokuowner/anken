@@ -966,6 +966,65 @@ function uploadToFirebase(){
   });
 }
 function restoreChosakuImgs(){/* Firebase保存のため不要 */}
+// ─── 入札調書画像の保存先キー ─────────────────
+// 案件IDはbase64のため「/」を含むことがあり、そのままFirebaseのパスに使うと
+// 階層が分かれて保存され、読み込み時に案件と一致せず画像が消えていた。
+// 「/」を「_」に置き換えたキーで保存する。
+function chosakuImgKey(id){return String(id).replace(/\//g,'_');}
+window._imgDirty=window._imgDirty||new Set();// 保存が必要な画像の案件ID
+// Firebaseの anken/imgs を読み込み、各案件に画像を戻す（旧形式の階層化データも救済する）
+function attachChosakuImgsFromFirebase(){
+  const db=window._fbDb,r=window._fbRef,g=window._fbGet;
+  return g(r(db,'anken/imgs')).then(snap=>{
+    const data=snap.val();
+    if(!data)return;
+    const byKey=new Map(recs.map(rc=>[chosakuImgKey(rc.id),rc]));
+    const legacyTop=new Set(),keepTop=new Set();// keepTop：対応する案件が見つからない画像を含むため削除しない
+    const walk=(obj,path,top)=>{
+      Object.keys(obj).forEach(k=>{
+        const v=obj[k],full=path?path+'/'+k:k;
+        if(typeof v==='string'){
+          const rec=byKey.get(chosakuImgKey(full));
+          if(rec){try{const arr=JSON.parse(v);if(Array.isArray(arr))rec._chosakuImgs=arr;}catch(e){}}
+          if(path){legacyTop.add(top);if(rec)window._imgDirty.add(rec.id);else keepTop.add(top);}
+        }else if(v&&typeof v==='object'){
+          walk(v,full,top||k);
+        }
+      });
+    };
+    walk(data,'','');
+    // 旧形式（階層化）で保存されていた画像は、新しいキーに保存し直してから旧データを削除
+    if(legacyTop.size&&window._loggedIn){
+      saveChosakuImgs().then(()=>{
+        const s=window._fbSet;
+        if(window._imgDirty.size)return;// 保存し直しに失敗した場合は旧データを残す
+        legacyTop.forEach(t=>{if(!keepTop.has(t))s(r(db,'anken/imgs/'+t),null).catch(()=>{});});
+      });
+    }
+  });
+}
+// 変更のあった案件の画像だけFirebaseに保存（空になった案件は削除）
+function saveChosakuImgs(){
+  if(!(window._fbReady&&window._fbDb&&window._loggedIn))return Promise.resolve();
+  const db=window._fbDb,r=window._fbRef,s=window._fbSet;
+  const ids=[...window._imgDirty];
+  if(!ids.length)return Promise.resolve();
+  return Promise.all(ids.map(id=>{
+    const rec=recs.find(rc=>rc.id===id);
+    const val=rec&&rec._chosakuImgs&&rec._chosakuImgs.length?JSON.stringify(rec._chosakuImgs):null;
+    return s(r(db,'anken/imgs/'+chosakuImgKey(id)),val).then(()=>{window._imgDirty.delete(id);});
+  })).catch(e=>{
+    console.warn('画像保存エラー:',e);
+    showToast('⚠️ 入札調書画像の保存に失敗しました：'+(e&&e.message||e),'warn');
+  });
+}
+// Firebaseからrecsを再読込する前に、メモリ上の画像を退避・復元する
+function keepChosakuImgs(fn){
+  const m=new Map();
+  recs.forEach(rc=>{if(rc._chosakuImgs&&rc._chosakuImgs.length)m.set(rc.id,rc._chosakuImgs);});
+  fn();
+  recs.forEach(rc=>{if(!rc._chosakuImgs&&m.has(rc.id))rc._chosakuImgs=m.get(rc.id);});
+}
 function loadFromFirebase(){
   if(!window._fbReady||!window._fbDb)return;
   const db=window._fbDb,r=window._fbRef,g=window._fbGet;
@@ -980,17 +1039,10 @@ function loadFromFirebase(){
         // localStorageも更新
         try{localStorage.setItem(SK,JSON.stringify(recs));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){}
         // 画像データを別パスから取得
-        g(r(db,'anken/imgs')).then(snapImgs=>{
-          const imgsData=snapImgs.val();
-          if(imgsData){
-            Object.keys(imgsData).forEach(imgId=>{
-              const imgRec=recs.find(rc=>rc.id===imgId);
-              if(imgRec){try{imgRec._chosakuImgs=JSON.parse(imgsData[imgId]);}catch(e){}}
-            });
-          }
+        attachChosakuImgsFromFirebase().catch(()=>{}).then(()=>{
           rebuild();
           showToast('✅ Firebaseからデータを読み込みました（'+recs.length+'件）','success');
-        }).catch(()=>{rebuild();showToast('✅ Firebaseからデータを読み込みました（'+recs.length+'件）','success');});
+        });
       } else {
         showToast('Firebaseにデータがありません。localStorageのデータを使用します。','warn');
       }
@@ -1007,7 +1059,8 @@ function loadFromFirebase(){
 function save(){
   // ログインしていない場合はlocalStorageのみ（Firebaseには保存しない）
   // localStorageにも保存（オフライン対応）
-  try{localStorage.setItem(SK,JSON.stringify(recs));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){}
+  // 画像はFirebase側に保存するため、localStorageには入れない（容量超過で保存全体が失敗するのを防ぐ）
+  try{localStorage.setItem(SK,JSON.stringify(recs.map(rec=>{if(!rec._chosakuImgs)return rec;const c=Object.assign({},rec);delete c._chosakuImgs;return c;})));localStorage.setItem(SEK,JSON.stringify([...seen]));}catch(e){console.warn('localStorage保存エラー:',e);}
   // Firebaseに保存（ログイン済みのみ）
   if(window._fbReady&&window._fbDb&&window._loggedIn){
     const db=window._fbDb,r=window._fbRef,s=window._fbSet;
@@ -1018,12 +1071,8 @@ function save(){
       return copy;
     });
     s(r(db,'anken/recs'),JSON.stringify(recsNoImgs)).catch(e=>console.warn('Firebase save error:',e));
-    // 画像データは別パスに保存
-    recs.forEach(rec=>{
-      if(rec._chosakuImgs&&rec._chosakuImgs.length){
-        s(r(db,'anken/imgs/'+rec.id),JSON.stringify(rec._chosakuImgs)).catch(()=>{});
-      }
-    });
+    // 画像データは別パスに保存（追加・削除があった案件のみ）
+    saveChosakuImgs();
     s(r(db,'anken/seen'),JSON.stringify([...seen])).catch(()=>{});
     s(r(db,'anken/pending'),localStorage.getItem('nyusatsu_pending_koukoku')||'[]').catch(()=>{});
     s(r(db,'anken/lastUpdate'),new Date().toISOString()).catch(()=>{});
@@ -3947,6 +3996,7 @@ function removeChosakuImg(id, idx){
   if(!rec||!rec._chosakuImgs)return;
   if(!confirm('この画像を削除しますか？'))return;
   rec._chosakuImgs.splice(idx,1);
+  window._imgDirty.add(id);
   const div=document.getElementById('chos-'+id);
   if(div)div.innerHTML=renderChosakuSection(rec);
   save();
@@ -3969,6 +4019,7 @@ function addChosakuImgBtn(input){
     reader.onload=function(e){
       resizeImgBase64(e.target.result,2400,1800,function(resized){
         rec._chosakuImgs.push(resized);
+        window._imgDirty.add(id);
         loaded++;
         if(loaded===files.length){
           const div=document.getElementById('chos-'+id);
@@ -5043,7 +5094,7 @@ function startApp(){
         if(serverTime&&serverTime>window._lastSyncTime){
           window._lastSyncTime=serverTime;
           // 他のデバイスが更新した場合のみ再読込
-          g(r(db,'anken/recs')).then(s2=>{if(s2.val()){recs=[];loadFromData(s2.val(),'');rebuild();}});
+          g(r(db,'anken/recs')).then(s2=>{if(s2.val()){keepChosakuImgs(()=>{recs=[];loadFromData(s2.val(),'');});attachChosakuImgsFromFirebase().catch(()=>{}).then(()=>rebuild());}});
         }
       }).catch(()=>{});
     }
