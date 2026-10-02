@@ -5284,7 +5284,7 @@ function toggleUsageRow(k){
 }
 // 直近12週の利用日をカレンダー状に表示＋利用日の一覧
 function renderUsageDetail(a,today){
-  const start=new Date(today);start.setDate(start.getDate()-83-start.getDay());// 12週前の日曜
+  const start=new Date(today);start.setDate(start.getDate()-84-start.getDay());// 12週前の日曜（今週の日曜から84日前）
   let cells='';
   for(let w=0;w<13;w++){
     cells+='<div style="display:flex;flex-direction:column;gap:2px">';
