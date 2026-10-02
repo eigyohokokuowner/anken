@@ -5178,7 +5178,7 @@ async function authListUsers(){
   return Object.values(v).map(u=>({username:u.username,canEdit:u.canEdit!==false,name:u.name||'',affiliation:u.affiliation||''})).sort((a,b)=>a.username.localeCompare(b.username));
 }
 // ─── ログイン・利用状況 ─────────────────────────
-// usageLog/<アカウントキー> = {username, last:最終利用日時, days:{'YYYY-MM-DD':'その日最初に開いた時刻'}}
+// anken/usageLog/<アカウントキー> = {username, last:最終利用日時, days:{'YYYY-MM-DD':'その日最初に開いた時刻'}}
 // ログイン時と、ログイン済みの状態でシステムを開いた時に記録（同じ日は1回として数える）
 function usageDayKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function recordUsage(username){
@@ -5186,7 +5186,7 @@ function recordUsage(username){
   const now=new Date(),day=usageDayKey(now);
   const doneKey='usageRecorded_'+username+'_'+day;
   try{if(sessionStorage.getItem(doneKey))return;}catch(e){}
-  const base='usageLog/'+authKeyFor(username);
+  const base='anken/usageLog/'+authKeyFor(username);
   const time=now.toLocaleTimeString('ja-JP',{hour12:false});
   window._fbGet(window._fbRef(window._fbDb,base+'/days/'+day)).then(sn=>{
     const jobs=[fbSafeSet(base+'/last',now.toISOString()),fbSafeSet(base+'/username',username)];
@@ -5207,7 +5207,7 @@ function showUsageModal(){
     +'<div id="usageBody" style="font-size:13px;color:var(--text3)">読み込み中…</div>'
     +'</div></div>';
   document.body.appendChild(div.firstChild);
-  Promise.all([authListUsers(),window._fbGet(window._fbRef(window._fbDb,'usageLog')).then(sn=>sn.val()||{})])
+  Promise.all([authListUsers(),window._fbGet(window._fbRef(window._fbDb,'anken/usageLog')).then(sn=>sn.val()||{})])
     .then(([users,log])=>{window._usageData={users,log};renderUsageBody();})
     .catch(e=>{const b=document.getElementById('usageBody');if(b)b.innerHTML='<span style="color:#dc2626">読み込みに失敗しました：'+esc(e&&e.message||String(e))+'</span>';});
 }
