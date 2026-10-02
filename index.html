@@ -358,6 +358,7 @@
   <span class="badge-total" id="headerTotal">データなし</span>
   <span id="authUserLabel" style="font-size:11px;color:rgba(255,255,255,0.7);margin-left:12px;vertical-align:middle"></span>
   <button id="loginBtn" style="display:none" class="login-btn-text">🔑 ログイン</button>
+  <button id="usageBtn" onclick="showUsageModal()" style="display:none;margin-left:8px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle">📈 利用状況</button>
   <button id="acctBtn" onclick="showAccountModal()" style="display:none;margin-left:8px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle">👤 アカウント管理</button>
   <button id="logoutBtn" onclick="doLogout()" style="display:none;margin-left:8px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle">🔓 ログアウト</button>
   <button onclick="loadFromFirebase()" class="pc-only" style="margin-left:12px;font-size:11px;padding:3px 10px;border:1px solid rgba(255,255,255,0.4);border-radius:4px;background:rgba(255,255,255,0.15);color:white;cursor:pointer;vertical-align:middle" title="Firebaseから最新データを取得">🔄 同期</button>
@@ -5053,6 +5054,7 @@ function updateAuthUI(username,canEdit){
     if(loginBtn)loginBtn.style.display='none';
     if(logoutBtn)logoutBtn.style.display='inline-block';
     if(acctBtn)acctBtn.style.display=canEdit?'inline-block':'none';// アカウント管理は編集可能な人のみ
+    {const ub=document.getElementById('usageBtn');if(ub)ub.style.display=canEdit?'inline-block':'none';}// 利用状況も編集可能な人のみ
     if(label)label.textContent='✅ '+username+(canEdit?'':'（閲覧のみ）');
   } else {
     body.classList.remove('auth-ok');
@@ -5060,6 +5062,7 @@ function updateAuthUI(username,canEdit){
     if(loginBtn)loginBtn.style.display='none';// ゲート必須のため、このボタンはもう使わない
     if(logoutBtn)logoutBtn.style.display='none';
     if(acctBtn)acctBtn.style.display='none';
+    {const ub=document.getElementById('usageBtn');if(ub)ub.style.display='none';}
     if(label)label.textContent='';
   }
 }
@@ -5098,6 +5101,7 @@ function gateLogin(){
       saveSession(username,result.canEdit);
       updateAuthUI(username,result.canEdit);
       handleAuthGate(username);
+      recordUsage(username);
     } else {
       errEl.textContent='IDまたはパスワードが正しくありません。管理者にお問い合わせください。';
       errEl.style.display='block';
@@ -5172,6 +5176,135 @@ async function authListUsers(){
   const snap=await g(r(db,'authUsers'));
   const v=snap.val()||{};
   return Object.values(v).map(u=>({username:u.username,canEdit:u.canEdit!==false,name:u.name||'',affiliation:u.affiliation||''})).sort((a,b)=>a.username.localeCompare(b.username));
+}
+// ─── ログイン・利用状況 ─────────────────────────
+// usageLog/<アカウントキー> = {username, last:最終利用日時, days:{'YYYY-MM-DD':'その日最初に開いた時刻'}}
+// ログイン時と、ログイン済みの状態でシステムを開いた時に記録（同じ日は1回として数える）
+function usageDayKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function recordUsage(username){
+  if(!username||!window._fbReady||!window._fbDb)return;
+  const now=new Date(),day=usageDayKey(now);
+  const doneKey='usageRecorded_'+username+'_'+day;
+  try{if(sessionStorage.getItem(doneKey))return;}catch(e){}
+  const base='usageLog/'+authKeyFor(username);
+  const time=now.toLocaleTimeString('ja-JP',{hour12:false});
+  window._fbGet(window._fbRef(window._fbDb,base+'/days/'+day)).then(sn=>{
+    const jobs=[fbSafeSet(base+'/last',now.toISOString()),fbSafeSet(base+'/username',username)];
+    if(!sn.val())jobs.push(fbSafeSet(base+'/days/'+day,time));
+    return Promise.all(jobs);
+  }).then(()=>{try{sessionStorage.setItem(doneKey,'1');}catch(e){}})
+    .catch(e=>console.warn('利用状況の記録エラー:',e));
+}
+function showUsageModal(){
+  if(!window._canEdit){showToast('編集可能なアカウントのみ利用できます','warn');return;}
+  const old=document.getElementById('usageModal');if(old)old.remove();
+  const div=document.createElement('div');
+  div.innerHTML='<div class="approval-modal" id="usageModal" onclick="if(event.target===this)this.remove()"><div class="approval-box" style="max-width:900px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<div style="font-size:16px;font-weight:600">📈 ログイン・利用状況</div>'
+    +'<button class="btn" onclick="document.getElementById(\'usageModal\').remove()">閉じる</button></div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:14px">アカウントごとの利用日を記録しています。同じ日に何度開いても1日1回として数えます。この機能の導入以降が対象です。</div>'
+    +'<div id="usageBody" style="font-size:13px;color:var(--text3)">読み込み中…</div>'
+    +'</div></div>';
+  document.body.appendChild(div.firstChild);
+  Promise.all([authListUsers(),window._fbGet(window._fbRef(window._fbDb,'usageLog')).then(sn=>sn.val()||{})])
+    .then(([users,log])=>{window._usageData={users,log};renderUsageBody();})
+    .catch(e=>{const b=document.getElementById('usageBody');if(b)b.innerHTML='<span style="color:#dc2626">読み込みに失敗しました：'+esc(e&&e.message||String(e))+'</span>';});
+}
+function renderUsageBody(selDay){
+  const body=document.getElementById('usageBody');
+  if(!body||!window._usageData)return;
+  const {users,log}=window._usageData;
+  const today=new Date();today.setHours(0,0,0,0);
+  const dayList=n=>Array.from({length:n},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-(n-1-i));return usageDayKey(d);});
+  const d30=dayList(30),d7=new Set(dayList(7)),d30s=new Set(d30),todayKey=usageDayKey(today);
+  // アカウント一覧（削除済みでも記録が残っていれば表示）
+  const map=new Map();
+  users.forEach(u=>map.set(authKeyFor(u.username),{...u,days:{},last:''}));
+  Object.keys(log).forEach(k=>{
+    const v=log[k]||{};
+    if(!map.has(k))map.set(k,{username:v.username||decodeURIComponent(k),name:'',affiliation:'',canEdit:null,deleted:true});
+    const a=map.get(k);a.days=v.days||{};a.last=v.last||'';
+  });
+  const accts=[...map.values()].map(a=>{
+    const ds=Object.keys(a.days);
+    return {...a,total:ds.length,in30:ds.filter(d=>d30s.has(d)).length,in7:ds.some(d=>d7.has(d)),today:!!a.days[todayKey]};
+  }).sort((a,b)=>(b.last||'').localeCompare(a.last||'')||a.username.localeCompare(b.username));
+  const cnt30=d30.map(d=>accts.filter(a=>a.days[d]).length);
+  const card=(label,val,unit)=>'<div style="flex:1;min-width:120px;background:var(--surface2,#f1efe8);border:1px solid var(--border);border-radius:8px;padding:10px 14px"><div style="font-size:11px;color:var(--text3)">'+label+'</div><div style="font-size:24px;font-weight:700;color:#6b3fa0">'+val+'<span style="font-size:12px;color:var(--text3);font-weight:400;margin-left:3px">'+unit+'</span></div></div>';
+  let h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">'
+    +card('今日のログイン',accts.filter(a=>a.today).length,'人')
+    +card('直近7日',accts.filter(a=>a.in7).length,'人')
+    +card('直近30日',accts.filter(a=>a.in30>0).length,'人')
+    +card('全アカウント',users.length,'件')+'</div>';
+  // 日別グラフ（棒をクリックするとその日のログイン者を表示）
+  const mx=Math.max(1,...cnt30);
+  h+='<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">日別ログイン人数（直近30日）<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:6px">棒をクリックするとその日のログイン者を表示</span></div>';
+  h+='<div style="display:flex;align-items:flex-end;gap:3px;height:110px;border-bottom:1px solid var(--border);padding-top:14px">'
+    +d30.map((d,i)=>{const c=cnt30[i],ht=c?Math.max(6,Math.round(c/mx*84)):0,sel=d===selDay;
+      return '<div title="'+d+'：'+c+'人" onclick="renderUsageBody(\''+d+'\')" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer">'
+        +(c?'<div style="font-size:10px;color:var(--text3)">'+c+'</div>':'')
+        +'<div style="width:100%;max-width:28px;height:'+ht+'px;background:'+(sel?'#3b1f66':'#6b3fa0')+';border-radius:2px 2px 0 0"></div></div>';}).join('')
+    +'</div>';
+  const fmtD=k=>{const [y,m,dd]=k.split('-');return y+'/'+(+m)+'/'+(+dd);};
+  h+='<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin:3px 0 12px"><span>'+fmtD(d30[0])+'</span><span>'+fmtD(d30[29])+'</span></div>';
+  if(selDay){
+    const who=accts.filter(a=>a.days[selDay]).sort((a,b)=>String(a.days[selDay]).localeCompare(String(b.days[selDay])));
+    h+='<div style="background:#f5f0fb;border:1px solid #d9c9ee;border-radius:6px;padding:8px 12px;margin-bottom:14px;font-size:12px">'
+      +'<b>'+fmtD(selDay)+' のログイン（'+who.length+'人）</b> <a href="javascript:void(0)" onclick="renderUsageBody()" style="margin-left:8px;font-size:11px">閉じる</a><div style="margin-top:4px;line-height:1.9">'
+      +(who.length?who.map(a=>'<span style="display:inline-block;margin-right:14px">'+esc(usageLabel(a))+' <span style="color:var(--text3)">'+esc(a.days[selDay])+'〜</span></span>').join(''):'<span style="color:var(--text3)">ログインなし</span>')
+      +'</div></div>';
+  }
+  // アカウント別の表（行をクリックすると日ごとの利用状況を表示）
+  const TH='text-align:left;font-size:11px;font-weight:400;color:var(--text3);padding:6px 4px;border-bottom:1px solid var(--border)';
+  const TD='padding:9px 4px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top';
+  h+='<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">アカウント別<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:6px">名前をクリックすると利用日の一覧を表示</span></div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+    +'<th style="'+TH+'">アカウント</th><th style="'+TH+';width:160px">最終ログイン</th><th style="'+TH+';width:90px">直近30日の利用日数</th><th style="'+TH+';width:90px">累計利用日数</th></tr></thead><tbody>';
+  const open=window._usageOpen||new Set();
+  accts.forEach(a=>{
+    const k=authKeyFor(a.username),isOpen=open.has(k);
+    const tag=a.deleted?' <span style="font-size:11px;color:var(--text3)">削除済み</span>':(a.canEdit===false?' <span style="font-size:11px;color:var(--text3)">閲覧のみ</span>':'');
+    h+='<tr><td style="'+TD+'"><a href="javascript:void(0)" onclick="toggleUsageRow(\''+k.replace(/'/g,"\\'")+'\')" style="color:#1a4fa0;font-weight:600;text-decoration:none">'+(isOpen?'▾ ':'')+esc(usageLabel(a))+'</a>'+tag+'</td>'
+      +'<td style="'+TD+';color:'+(a.last?'var(--text)':'var(--text3)')+'">'+(a.last?esc(new Date(a.last).toLocaleString('ja-JP')):'記録なし')+'</td>'
+      +'<td style="'+TD+'">'+a.in30+'日</td><td style="'+TD+'">'+a.total+'日</td></tr>';
+    if(isOpen)h+='<tr><td colspan="4" style="padding:8px 4px 14px;border-bottom:1px solid var(--border);background:#faf9f6">'+renderUsageDetail(a,today)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  body.style.color='var(--text)';
+  body.innerHTML=h;
+}
+function usageLabel(a){
+  return [a.name,a.affiliation].filter(Boolean).join(' ')+(a.name||a.affiliation?' ('+a.username+')':a.username);
+}
+function toggleUsageRow(k){
+  window._usageOpen=window._usageOpen||new Set();
+  if(window._usageOpen.has(k))window._usageOpen.delete(k);else window._usageOpen.add(k);
+  renderUsageBody();
+}
+// 直近12週の利用日をカレンダー状に表示＋利用日の一覧
+function renderUsageDetail(a,today){
+  const start=new Date(today);start.setDate(start.getDate()-83-start.getDay());// 12週前の日曜
+  let cells='';
+  for(let w=0;w<13;w++){
+    cells+='<div style="display:flex;flex-direction:column;gap:2px">';
+    for(let dw=0;dw<7;dw++){
+      const d=new Date(start);d.setDate(start.getDate()+w*7+dw);
+      if(d>today){cells+='<div style="width:12px;height:12px"></div>';continue;}
+      const k=usageDayKey(d),on=!!a.days[k];
+      cells+='<div title="'+(d.getMonth()+1)+'/'+d.getDate()+(on?'：'+a.days[k]+'〜':'：なし')+'" style="width:12px;height:12px;border-radius:2px;background:'+(on?'#6b3fa0':'#e6e2d8')+'"></div>';
+    }
+    cells+='</div>';
+  }
+  const wd=['日','月','火','水','木','金','土'];
+  const list=Object.keys(a.days).sort().reverse();
+  return '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">'
+    +'<div><div style="font-size:11px;color:var(--text3);margin-bottom:4px">直近12週（紫＝利用あり）</div>'
+    +'<div style="display:flex;gap:2px"><div style="display:flex;flex-direction:column;gap:2px;font-size:9px;color:var(--text3);margin-right:2px">'+wd.map(x=>'<div style="height:12px;line-height:12px">'+x+'</div>').join('')+'</div>'+cells+'</div></div>'
+    +'<div style="flex:1;min-width:200px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px">利用日（新しい順・その日最初に開いた時刻）</div>'
+    +(list.length?'<div style="max-height:150px;overflow-y:auto;font-size:12px;line-height:1.8">'+list.map(k=>{const [y,m,d]=k.split('-');const dt=new Date(+y,+m-1,+d);return y+'/'+(+m)+'/'+(+d)+'（'+wd[dt.getDay()]+'） <span style="color:var(--text3)">'+esc(a.days[k])+'〜</span>';}).join('<br>')+'</div>'
+      :'<div style="font-size:12px;color:var(--text3)">記録なし</div>')
+    +'</div></div>';
 }
 function showAccountModal(){
   const div=document.createElement('div');
@@ -5293,6 +5426,7 @@ function startApp(){
   // Firebase準備完了後に自動同期
   function onFirebaseReady(){
     verifySessionStillValid();
+    {const ss=loadSession();if(ss&&ss.username)recordUsage(ss.username);}
     const db=window._fbDb,r=window._fbRef,g=window._fbGet;
     fbReadRecsJson().then(fbData=>{
       if(fbData){
