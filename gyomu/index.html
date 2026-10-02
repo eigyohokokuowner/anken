@@ -258,6 +258,7 @@
     <div class="sidebar-divider"></div>
     <div class="sidebar-section auth-required">
       <div class="sidebar-item" onclick="showTrackLogDashboard()"><span>📊 追跡操作の管理</span></div>
+      <div class="sidebar-item" onclick="showLoginDashboard()"><span>📈 ログイン・利用状況</span></div>
     </div>
     <div class="sidebar-divider auth-required"></div>
     <div class="sidebar-label">発注機関</div>
@@ -1357,6 +1358,97 @@ function renderTrackLog(){
       +'</div>';
   }).join('')+(rows.length>500?'<div style="padding:8px;color:var(--text3);font-size:11px">最新500件を表示しています</div>':'');
 }
+// ─── ログイン履歴・利用状況（編集可能者のみ） ──────────
+// Firebase: gyomu/loginLog/<YYYYMMDD>/<アカウントキー> = {username,first,last,count}
+function ymdKey(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());}
+function ymdLabel(k){return k.slice(0,4)+'/'+Number(k.slice(4,6))+'/'+Number(k.slice(6,8));}
+function logLogin(username){
+  try{
+    if(!window._fbReady||!window._fbDb||!username)return;
+    // 同じブラウザ・同じ日・同じアカウントでは、タブを開き直しても1回だけ数える
+    const now=new Date(),day=ymdKey(now),flag='anken_login_logged_'+day+'_'+username;
+    if(sessionStorage.getItem(flag))return;
+    sessionStorage.setItem(flag,'1');
+    const db=window._fbDb,r=window._fbRef,g=window._fbGet,st=window._fbSet;
+    const path='gyomu/loginLog/'+day+'/'+authKeyFor(username);
+    g(r(db,path)).then(snap=>{
+      const v=snap.val()||{};
+      const iso=now.toISOString();
+      return st(r(db,path),{username,first:v.first||iso,last:iso,count:(v.count||0)+1});
+    }).catch(()=>{try{sessionStorage.removeItem(flag);}catch(e){}});
+  }catch(e){}
+}
+function showLoginDashboard(){
+  if(!window._canEdit){showToast('この画面は編集可能者のみ利用できます','warn');return;}
+  if(document.getElementById('loginLogModal'))return;
+  const div=document.createElement('div');
+  div.innerHTML='<div class="approval-modal" id="loginLogModal"><div class="approval-box" style="max-width:900px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:16px;font-weight:600">📈 ログイン・利用状況</div>'
+    +'<button class="btn" onclick="document.getElementById(\'loginLogModal\').remove()">閉じる</button></div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:12px">アカウントごとの利用日を記録しています。同じ日に何度開いても1日1回として数えます。この機能の導入以降が対象です。</div>'
+    +'<div id="llBody" style="font-size:13px">読み込み中…</div></div></div>';
+  document.body.appendChild(div.firstChild);
+  loadLoginLog();
+}
+async function loadLoginLog(){
+  const el=document.getElementById('llBody');
+  try{
+    const [snap,users]=await Promise.all([
+      window._fbGet(window._fbRef(window._fbDb,'gyomu/loginLog')),
+      authListUsers()
+    ]);
+    const log=snap.val()||{};
+    const uinfo={};users.forEach(u=>{uinfo[u.username]=u;});
+    const who=n=>{const x=uinfo[n];return (x&&(x.name||x.affiliation))?esc((x.name||'')+(x.affiliation?' '+x.affiliation:''))+' ('+esc(n)+')':esc(n);};
+    const days=Object.keys(log).sort().reverse();
+    const perUser={};// username -> {days:Set, last, count}
+    days.forEach(d=>Object.values(log[d]).forEach(e=>{
+      const u=perUser[e.username]||(perUser[e.username]={days:new Set(),last:'',count:0});
+      u.days.add(d);u.count+=e.count||1;if((e.last||'')>u.last)u.last=e.last||'';
+    }));
+    const today=new Date();
+    const keyAgo=n=>{const d=new Date(today);d.setDate(d.getDate()-n);return ymdKey(d);};
+    const k7=keyAgo(6),k30=keyAgo(29),kToday=ymdKey(today);
+    const activeSince=k=>{const set=new Set();days.forEach(d=>{if(d>=k)Object.values(log[d]).forEach(e=>set.add(e.username));});return set.size;};
+    const card=(label,val,sub)=>'<div style="flex:1;min-width:130px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px"><div style="font-size:11px;color:var(--text3)">'+label+'</div><div style="font-size:22px;font-weight:600;color:var(--accent)">'+val+'<span style="font-size:12px;color:var(--text3);font-weight:400"> '+sub+'</span></div></div>';
+    let h='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'
+      +card('今日のログイン',activeSince(kToday),'人')
+      +card('直近7日',activeSince(k7),'人')
+      +card('直近30日',activeSince(k30),'人')
+      +card('全アカウント',users.length,'件')+'</div>';
+    // 直近30日の日別人数グラフ
+    const series=[];for(let i=29;i>=0;i--){const k=keyAgo(i);series.push({k,n:log[k]?Object.keys(log[k]).length:0});}
+    const mx=Math.max(1,...series.map(x=>x.n));
+    h+='<div style="font-weight:600;margin-bottom:6px">日別ログイン人数（直近30日）</div>'
+      +'<div style="display:flex;align-items:flex-end;gap:3px;height:90px;border-bottom:1px solid var(--border);padding:0 2px;margin-bottom:2px">'
+      +series.map(x=>'<div title="'+ymdLabel(x.k)+'：'+x.n+'人" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:9px;color:var(--text3)">'+(x.n||'')+'</div><div style="width:100%;height:'+Math.round(x.n/mx*64)+'px;min-height:'+(x.n?2:0)+'px;background:var(--accent);border-radius:2px 2px 0 0"></div></div>').join('')
+      +'</div><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:16px"><span>'+ymdLabel(series[0].k)+'</span><span>'+ymdLabel(series[29].k)+'</span></div>';
+    // アカウント別
+    const rows=users.map(u=>{const p=perUser[u.username];return{u,p,days30:p?[...p.days].filter(d=>d>=k30).length:0};})
+      .sort((a,b)=>((b.p&&b.p.last)||'').localeCompare((a.p&&a.p.last)||''));
+    h+='<div style="font-weight:600;margin-bottom:6px">アカウント別</div>'
+      +'<div style="overflow-x:auto;margin-bottom:16px"><div style="min-width:560px">'
+      +'<div style="display:grid;grid-template-columns:1fr 150px 90px 90px;gap:8px;padding:0 4px 6px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3)"><span>アカウント</span><span>最終ログイン</span><span>直近30日の利用日数</span><span>累計利用日数</span></div>'
+      +rows.map(r=>'<div style="display:grid;grid-template-columns:1fr 150px 90px 90px;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);align-items:center">'
+        +'<span style="color:#1a56a8;font-weight:600">'+who(r.u.username)+(r.u.canEdit?'':' <span style="color:var(--text3);font-weight:400;font-size:11px">閲覧のみ</span>')+'</span>'
+        +'<span style="color:var(--text2);font-size:12px">'+(r.p?esc(tlFmt(r.p.last)):'<span style="color:var(--text3)">記録なし</span>')+'</span>'
+        +'<span>'+r.days30+'日</span><span>'+(r.p?r.p.days.size:0)+'日</span></div>').join('')
+      +'</div></div>';
+    // 日別履歴（新しい順）
+    h+='<div style="font-weight:600;margin-bottom:6px">ログイン履歴（日別・新しい順）</div>';
+    h+=days.length?days.slice(0,90).map(d=>{
+      const es=Object.values(log[d]).sort((a,b)=>(a.first||'').localeCompare(b.first||''));
+      return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:9px 4px;border-bottom:1px solid var(--border)">'
+        +'<span style="color:var(--text3);font-size:12px;min-width:84px">'+ymdLabel(d)+'</span>'
+        +'<span style="font-size:11px;background:var(--accent-light);color:var(--accent);border-radius:10px;padding:1px 8px">'+es.length+'人</span>'
+        +es.map(e=>'<span style="color:#1a56a8;font-weight:600">'+who(e.username)+'</span><span style="color:var(--text3);font-size:11px">'+esc((tlFmt(e.first).split(' ')[1])||'')+'</span>').join('<span style="color:var(--border)">／</span>')
+        +'</div>';
+    }).join(''):'<span style="color:var(--text3)">まだログイン記録がありません。次回ログインから記録されます。</span>';
+    el.innerHTML=h;
+  }catch(e){
+    if(el)el.innerHTML='<span style="color:#dc2626">読み込みに失敗しました。通信状況をご確認ください。</span>';
+  }
+}
 function showAccountModal(){
   const div=document.createElement('div');
   div.innerHTML='<div class="approval-modal" id="acctModal"><div class="approval-box" style="max-width:680px">'
@@ -1448,6 +1540,7 @@ function startApp(){
     g(r(db,'authUsers/'+authKeyFor(s.username))).then(snap=>{
       const rec=snap.val();
       if(!rec){showToast('アカウントが無効になりました。再度ログインしてください。','warn');doLogout();return;}
+      logLogin(s.username);
       const canEdit=rec.canEdit!==false;
       if(canEdit!==s.canEdit){saveSession(s.username,canEdit);updateAuthUI(s.username,canEdit);showToast(canEdit?'編集権限が付与されました':'閲覧のみのアカウントに変更されました','warn');}
     }).catch(()=>{});
