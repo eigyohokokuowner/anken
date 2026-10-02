@@ -256,6 +256,10 @@
       <div class="sidebar-item" data-jf="none" onclick="setJudgeFilter('none')"><span>― 未設定</span><span class="sidebar-count" id="cnt-j-none">0</span></div>
     </div>
     <div class="sidebar-divider"></div>
+    <div class="sidebar-section auth-required">
+      <div class="sidebar-item" onclick="showTrackLogDashboard()"><span>📊 追跡操作の管理</span></div>
+    </div>
+    <div class="sidebar-divider auth-required"></div>
     <div class="sidebar-label">発注機関</div>
     <div id="orgList"></div>
     <div class="sidebar-divider"></div>
@@ -825,12 +829,27 @@ function confirmKaisatsuMatches(count){
 }
 
 // ─── 判定・業務内容 ─────────────────────────
+// ─── 追跡案件の操作履歴（Firebase: gyomu/trackLog/<キー>） ──────────
+function logTrackAction(rec,action,via){
+  try{
+    if(!window._fbReady||!window._fbDb)return;
+    const sess=loadSession();
+    if(!sess||!sess.username)return;
+    const at=new Date().toISOString();
+    const key=at.replace(/[^0-9]/g,'')+'_'+Math.random().toString(36).slice(2,7);
+    const entry={at,username:sess.username,recId:rec.id||'',recName:rec.name||'',org:rec.org||rec.orderer||'',action,via:via||''};
+    window._fbSet(window._fbRef(window._fbDb,'gyomu/trackLog/'+key),entry).catch(()=>{});
+  }catch(e){}
+}
 function setJudgment(id,val,e){
   if(e){e.stopPropagation();e.preventDefault();}
   if(!window._loggedIn){showToast('編集にはログインが必要です','warn');if(e&&e.target)e.target.value=window._lastJudgmentVal||'';return;}
   const rec=recs.find(r=>r.id===id);
   if(!rec)return;
+  const before=rec._judgment||null;
   rec._judgment=(val===''||val==='none')?null:val;
+  if(before!=='track'&&rec._judgment==='track')logTrackAction(rec,'track','判定変更');
+  else if(before==='track'&&rec._judgment!=='track')logTrackAction(rec,'untrack','判定変更');
   save();rebuild();
 }
 function setFutyo(id,val){
@@ -903,6 +922,7 @@ function applyGyomuDetail(){
     return;
   }
   target._businessContent=content;
+  if(target._judgment!=='track')logTrackAction(target,'track','業務内容反映');
   target._judgment='track';// 業務内容が入った案件は自動で追跡案件に
   target.date=todayDateStr();// 更新日は反映操作を行った当日の日付
   save();rebuild();
@@ -1262,6 +1282,80 @@ async function authListUsers(){
   const snap=await g(r(db,'authUsers'));
   const v=snap.val()||{};
   return Object.values(v).map(u=>({username:u.username,canEdit:u.canEdit!==false,name:u.name||'',affiliation:u.affiliation||''})).sort((a,b)=>a.username.localeCompare(b.username));
+}
+// ─── 追跡案件 管理ダッシュボード（編集可能者のみ） ──────────
+let _tlEntries=[],_tlUsers={};
+function tlFmt(iso){
+  const d=new Date(iso);if(isNaN(d))return iso||'';
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+function tlWho(u){
+  const x=_tlUsers[u];
+  if(x&&(x.name||x.affiliation))return esc((x.name||'')+(x.affiliation?' '+x.affiliation:''))+' ('+esc(u)+')';
+  return esc(u);
+}
+function showTrackLogDashboard(){
+  if(!window._canEdit){showToast('この画面は編集可能者のみ利用できます','warn');return;}
+  if(document.getElementById('trackLogModal'))return;
+  const div=document.createElement('div');
+  div.innerHTML='<div class="approval-modal" id="trackLogModal"><div class="approval-box" style="max-width:900px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:16px;font-weight:600">📊 追跡案件の更新履歴（新しい順）</div>'
+    +'<button class="btn" onclick="document.getElementById(\'trackLogModal\').remove()">閉じる</button></div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:10px">判定を「追跡案件」に設定した（または解除した）アカウントと案件の記録です。この機能の導入以降の操作が対象です。</div>'
+    +'<div id="tlSummary" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+    +'<select id="tlUser" onchange="renderTrackLog()" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px"><option value="">すべてのアカウント</option></select>'
+    +'<select id="tlAction" onchange="renderTrackLog()" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px"><option value="">設定・解除</option><option value="track">設定のみ</option><option value="untrack">解除のみ</option></select>'
+    +'<input id="tlQ" oninput="renderTrackLog()" placeholder="案件名で検索" style="flex:1;min-width:140px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px">'
+    +'</div>'
+    +'<div id="tlList" style="font-size:13px">読み込み中…</div>'
+    +'</div></div>';
+  document.body.appendChild(div.firstChild);
+  loadTrackLog();
+}
+async function loadTrackLog(){
+  const el=document.getElementById('tlList');
+  try{
+    const [snap,users]=await Promise.all([
+      window._fbGet(window._fbRef(window._fbDb,'gyomu/trackLog')),
+      authListUsers()
+    ]);
+    _tlUsers={};users.forEach(u=>{_tlUsers[u.username]=u;});
+    const v=snap.val()||{};
+    _tlEntries=Object.values(v).sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+    const sel=document.getElementById('tlUser');
+    if(sel){
+      const names=[...new Set(_tlEntries.map(e=>e.username))].sort();
+      sel.innerHTML='<option value="">すべてのアカウント</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
+    }
+    renderTrackLog();
+  }catch(e){
+    if(el)el.innerHTML='<span style="color:#dc2626">履歴の読み込みに失敗しました。通信状況をご確認ください。</span>';
+  }
+}
+function renderTrackLog(){
+  const listEl=document.getElementById('tlList');if(!listEl)return;
+  const u=document.getElementById('tlUser').value,a=document.getElementById('tlAction').value,q=document.getElementById('tlQ').value.trim();
+  // アカウント別の追跡設定件数
+  const cnt={};
+  _tlEntries.filter(e=>e.action==='track').forEach(e=>{cnt[e.username]=(cnt[e.username]||0)+1;});
+  document.getElementById('tlSummary').innerHTML=Object.keys(cnt).sort((x,y)=>cnt[y]-cnt[x]).map(n=>
+    '<span style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:11px;color:var(--text2)">'+tlWho(n)+' <b style="color:var(--accent)">'+cnt[n]+'件</b></span>').join('');
+  const rows=_tlEntries.filter(e=>(!u||e.username===u)&&(!a||e.action===a)&&(!q||(e.recName||'').includes(q)));
+  if(!rows.length){listEl.innerHTML='<span style="color:var(--text3)">該当する履歴がありません</span>';return;}
+  listEl.innerHTML=rows.slice(0,500).map(e=>{
+    const isTrack=e.action==='track';
+    return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:9px 4px;border-bottom:1px solid var(--border)">'
+      +'<span style="color:var(--text3);font-size:12px">'+esc(tlFmt(e.at))+'</span>'
+      +'<span style="color:#1a56a8;font-weight:600">'+tlWho(e.username)+'</span>'
+      +'<span style="color:var(--text3)">が</span>'
+      +'<span style="font-weight:600">'+esc(e.recName||'（案件名なし）')+'</span>'
+      +'<span style="color:var(--text3)">を</span>'
+      +'<span class="'+(isTrack?'b-j-track':'badge b-j-pending')+'" style="font-size:11px;padding:2px 8px;border-radius:10px">'+(isTrack?'追跡案件':'追跡解除')+'</span>'
+      +'<span style="color:var(--text3)">に'+(isTrack?'設定':'変更')+(e.via&&e.via!=='判定変更'?'（'+esc(e.via)+'）':'')+'</span>'
+      +'</div>';
+  }).join('')+(rows.length>500?'<div style="padding:8px;color:var(--text3);font-size:11px">最新500件を表示しています</div>':'');
 }
 function showAccountModal(){
   const div=document.createElement('div');
