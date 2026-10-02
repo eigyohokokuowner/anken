@@ -1390,6 +1390,13 @@ function showLoginDashboard(){
   document.body.appendChild(div.firstChild);
   loadLoginLog();
 }
+function toggleLlUser(i){
+  const d=document.getElementById('llDetail'+i),a=document.getElementById('llArrow'+i);
+  if(!d)return;
+  const open=d.style.display==='none';
+  d.style.display=open?'block':'none';
+  if(a)a.textContent=open?'▾':'▸';
+}
 async function loadLoginLog(){
   const el=document.getElementById('llBody');
   try{
@@ -1403,8 +1410,8 @@ async function loadLoginLog(){
     const days=Object.keys(log).sort().reverse();
     const perUser={};// username -> {days:Set, last, count}
     days.forEach(d=>Object.values(log[d]).forEach(e=>{
-      const u=perUser[e.username]||(perUser[e.username]={days:new Set(),last:'',count:0});
-      u.days.add(d);u.count+=e.count||1;if((e.last||'')>u.last)u.last=e.last||'';
+      const u=perUser[e.username]||(perUser[e.username]={days:new Set(),first:{},last:'',count:0});
+      u.days.add(d);u.first[d]=e.first||'';u.count+=e.count||1;if((e.last||'')>u.last)u.last=e.last||'';
     }));
     const today=new Date();
     const keyAgo=n=>{const d=new Date(today);d.setDate(d.getDate()-n);return ymdKey(d);};
@@ -1426,13 +1433,40 @@ async function loadLoginLog(){
     // アカウント別
     const rows=users.map(u=>{const p=perUser[u.username];return{u,p,days30:p?[...p.days].filter(d=>d>=k30).length:0};})
       .sort((a,b)=>((b.p&&b.p.last)||'').localeCompare((a.p&&a.p.last)||''));
-    h+='<div style="font-weight:600;margin-bottom:6px">アカウント別</div>'
+    const wd=['日','月','火','水','木','金','土'];
+    const heatmap=(p)=>{
+      // 直近12週（日曜始まり）：列＝週、行＝曜日
+      const start=new Date(today);start.setHours(0,0,0,0);start.setDate(start.getDate()-start.getDay()-11*7);
+      let g='<div style="display:flex;gap:4px"><div style="display:grid;grid-template-rows:repeat(7,14px);gap:3px;font-size:10px;color:var(--text3);line-height:14px;margin-right:2px">'+wd.map(w=>'<span>'+w+'</span>').join('')+'</div>'
+        +'<div style="display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,14px);grid-auto-columns:14px;gap:3px">';
+      for(let w=0;w<12;w++)for(let d=0;d<7;d++){
+        const dt=new Date(start);dt.setDate(start.getDate()+w*7+d);
+        const k=ymdKey(dt);
+        const used=p&&p.days.has(k),future=dt>today;
+        g+='<span title="'+ymdLabel(k)+(used?'：利用あり':'')+'" style="border-radius:3px;background:'+(used?'var(--accent)':future?'transparent':'#e7e4dd')+'"></span>';
+      }
+      return g+'</div></div>';
+    };
+    h+='<div style="font-weight:600;margin-bottom:6px">アカウント別 <span style="font-weight:400;font-size:11px;color:var(--text3)">名前をクリックすると利用日の一覧を表示</span></div>'
       +'<div style="overflow-x:auto;margin-bottom:16px"><div style="min-width:560px">'
       +'<div style="display:grid;grid-template-columns:1fr 150px 90px 90px;gap:8px;padding:0 4px 6px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3)"><span>アカウント</span><span>最終ログイン</span><span>直近30日の利用日数</span><span>累計利用日数</span></div>'
-      +rows.map(r=>'<div style="display:grid;grid-template-columns:1fr 150px 90px 90px;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);align-items:center">'
-        +'<span style="color:#1a56a8;font-weight:600">'+who(r.u.username)+(r.u.canEdit?'':' <span style="color:var(--text3);font-weight:400;font-size:11px">閲覧のみ</span>')+'</span>'
-        +'<span style="color:var(--text2);font-size:12px">'+(r.p?esc(tlFmt(r.p.last)):'<span style="color:var(--text3)">記録なし</span>')+'</span>'
-        +'<span>'+r.days30+'日</span><span>'+(r.p?r.p.days.size:0)+'日</span></div>').join('')
+      +rows.map((r,i)=>{
+        const ds=r.p?[...r.p.days].sort().reverse():[];
+        const detail='<div id="llDetail'+i+'" style="display:none;background:var(--surface2);border-bottom:1px solid var(--border);padding:12px 14px">'
+          +'<div style="display:flex;flex-wrap:wrap;gap:28px">'
+          +'<div><div style="font-size:11px;color:var(--text3);margin-bottom:6px">直近12週（紫＝利用あり）</div>'+heatmap(r.p)+'</div>'
+          +'<div style="flex:1;min-width:220px"><div style="font-size:11px;color:var(--text3);margin-bottom:6px">利用日（新しい順・その日最初に開いた時刻）</div>'
+          +(ds.length?'<div style="max-height:180px;overflow-y:auto">'+ds.map(d=>{
+              const dt=new Date(Number(d.slice(0,4)),Number(d.slice(4,6))-1,Number(d.slice(6,8)));
+              const t=(tlFmt(r.p.first[d]).split(' ')[1])||'';
+              return '<div style="padding:2px 0;font-size:13px">'+ymdLabel(d)+'（'+wd[dt.getDay()]+'）'+(t?' <span style="color:var(--text3);font-size:12px">'+esc(t)+'〜</span>':'')+'</div>';
+            }).join('')+'</div>':'<span style="color:var(--text3);font-size:12px">利用記録がありません</span>')
+          +'</div></div></div>';
+        return '<div onclick="toggleLlUser('+i+')" style="cursor:pointer;display:grid;grid-template-columns:1fr 150px 90px 90px;gap:8px;padding:9px 4px;border-bottom:1px solid var(--border);align-items:center">'
+          +'<span style="color:#1a56a8;font-weight:600"><span id="llArrow'+i+'" style="font-size:10px;display:inline-block;width:12px">▸</span>'+who(r.u.username)+(r.u.canEdit?'':' <span style="color:var(--text3);font-weight:400;font-size:11px">閲覧のみ</span>')+'</span>'
+          +'<span style="color:var(--text2);font-size:12px">'+(r.p?esc(tlFmt(r.p.last)):'<span style="color:var(--text3)">記録なし</span>')+'</span>'
+          +'<span>'+r.days30+'日</span><span>'+(r.p?r.p.days.size:0)+'日</span></div>'+detail;
+      }).join('')
       +'</div></div>';
     // 日別履歴（新しい順）
     h+='<div style="font-weight:600;margin-bottom:6px">ログイン履歴（日別・新しい順）</div>';
