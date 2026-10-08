@@ -4315,8 +4315,10 @@ function changeModalImg(imgs,dir,cur){
   modal.querySelectorAll('button')[2].onclick=()=>changeModalImg(imgs,'next',next);
 }
 function setFutyo(id, val){
+  if(!window._canEdit){showToast('編集にはログインが必要です','warn');return;}
   const rec=recs.find(r=>r.id===id);
   if(!rec)return;
+  if(val&&rec.rakusatsuSha&&!confirm('この工事には落札者（'+rec.rakusatsuSha+'）が登録されています。\n不調不落に設定しますか？'))return;
   rec._futyo=val;
   save();rebuild();
   showToast(val?'不調不落に設定しました':'不調不落を解除しました', val?'warn':'success');
@@ -4397,7 +4399,7 @@ function renderTable(data){
         <div class="det-item"><div class="lbl">発注規模</div><div class="val">${hl(r,'scale',esc(r.scale||'—'))}</div></div>
         <div class="det-item"><div class="lbl">工期</div><div class="val">${hl(r,'duration',esc(r.duration||'—'))}</div></div>
         <div class="det-item"><div class="lbl">入札契約方式</div><div class="val">${hl(r,'method',esc(r.method||'—'))}</div></div>
-        ${r._status==='kaisatsu'&&!r.rakusatsuSha?`<div class="det-item"><div class="lbl">不調不落</div><div class="val">${r._futyo?'<span style="background:#ff6b35;color:white;padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600">⚠ 不調不落</span>　<button onclick="setFutyo(\''+r.id+'\',false)" style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;cursor:pointer">解除</button>':'<button onclick="setFutyo(\''+r.id+'\',true)" style="font-size:12px;padding:4px 14px;border:1px solid #ff6b35;border-radius:4px;background:white;color:#ff6b35;cursor:pointer;font-weight:600">⚠ 不調不落に設定</button>'}</div></div>`:''}
+        ${r._status==='kaisatsu'||r._futyo?`<div class="det-item"><div class="lbl">不調不落</div><div class="val" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${r._futyo?'<span style="background:#ff6b35;color:white;padding:2px 10px;border-radius:4px;font-size:12px;font-weight:600">⚠ 不調不落</span>':'<span style="font-size:12px;color:var(--text3)">設定なし</span>'}${window._canEdit?(r._futyo?'<button onclick="event.stopPropagation();setFutyo(\''+r.id+'\',false)" style="font-size:12px;padding:3px 12px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;cursor:pointer">✕ 不調不落を解除</button>':'<button onclick="event.stopPropagation();setFutyo(\''+r.id+'\',true)" style="font-size:12px;padding:3px 12px;border:1px solid #ff6b35;border-radius:4px;background:white;color:#ff6b35;cursor:pointer;font-weight:600">⚠ 不調不落に設定</button>'):''}</div></div>`:''}
         ${(r._status==='koukoku'||r._status==='kaisatsu')?`<div class="det-item"><div class="lbl">公告紐付け状態</div><div class="val"><span class="badge b-link-${r._linkStatus||'approved'}" style="margin-right:6px">${r._linkStatus==='manual'?'🔧 手動設定':r._linkStatus==='none'?'未紐付け':'✅ 承認済'}</span>${r._koukokuDate?'公告日: '+esc(r._koukokuDate):''}</div></div><div class="det-item"><div class="lbl">紐付け操作</div><div class="val" style="display:flex;gap:6px;flex-wrap:wrap">${r._status==='kaisatsu'?'<button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="unlinkKoukoku(\''+r.id+'\')" title="開札情報を削除して公告中に戻します">🔓 開札情報を解除</button>':'<button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="unlinkKoukoku(\''+r.id+'\')" title="公告紐付けを解除して発注予定に戻します">🔓 解除して再紐付け</button>'}</div></div>`:''}
         <div class="det-item full"><div class="lbl">概要</div>${r.summary?'<div class="val summ">'+hl(r,'summary',esc(r.summary))+'</div>':'<div class="no-det">詳細ページのテキストを貼り付けると表示されます</div>'}</div>
         ${r.rakusatsuSha?'<div class="det-item"><div class="lbl" style="color:#0f6e56">🔨 落札者</div><div class="val" style="font-weight:600">'+esc(r.rakusatsuSha)+'</div></div>':''}
