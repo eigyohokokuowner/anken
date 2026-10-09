@@ -287,14 +287,15 @@
       <div id="gyomuPanelBody" style="display:none;padding-top:10px">
         <div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:8px">
           i-ppi.jpの案件詳細ページ、または「入札の経過（業務）案件概要」ページのテキストをコピーして貼り付けてください。<br>
-          「業務内容を反映」：業務名が完全一致する案件に業務内容を保存します（判定も自動で追跡案件に）。<br>
+          「業務内容を反映」：業務名が完全一致する案件に業務内容を保存します（判定も自動で追跡案件に）。業務名は貼り付けテキストから自動認識します。認識できない場合は、上の「業務名」欄に案件名を入力すると、貼り付けテキスト全体を業務内容として保存します。<br>
           「落札者名を反映」：業務名称・公告日の両方が完全一致する開札済案件に、落札者名を保存します（落札者名が空欄の場合は契約者名を登録）。
         </div>
-        <textarea id="gyomuDetailTA" style="width:100%;height:110px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);background:var(--bg);resize:vertical;outline:none;line-height:1.6;" placeholder="ここに詳細ページ or 入札経過ページのテキストを貼り付け"></textarea>
+        <input id="gyomuNameIn" type="text" placeholder="業務名（任意）：自動で認識できないときだけ、案件一覧の案件名を貼り付け" style="width:100%;box-sizing:border-box;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);background:var(--bg);outline:none;">
+        <textarea id="gyomuDetailTA" style="width:100%;height:110px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text);background:var(--bg);resize:vertical;outline:none;line-height:1.6;" placeholder="ここに業務内容（または詳細ページ全体）のテキストを貼り付け"></textarea>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
           <button class="btn btn-primary" onclick="applyGyomuDetail()">✅ 業務内容を反映</button>
           <button class="btn btn-primary" onclick="applyKaisatsuKekka()">🏆 落札者名を反映</button>
-          <button class="btn" onclick="document.getElementById('gyomuDetailTA').value=''">クリア</button>
+          <button class="btn" onclick="document.getElementById('gyomuDetailTA').value='';document.getElementById('gyomuNameIn').value=''">クリア</button>
         </div>
       </div>
     </div>
@@ -870,6 +871,33 @@ function toggleGyomuPanel(){
   tg.textContent=open?'▼ 開く':'▲ 閉じる';
 }
 
+// 番号付きラベルがない形式（「案件名：○○」「業務名称 ○○」＋「業務内容」見出し以降の本文）を行単位で解析
+function parseGyomuDetailLines(text){
+  const lines=text.split(/\r?\n/);
+  const NAME=/^[\s　]*(案\s*件\s*名(\s*称)?|業\s*務\s*名(\s*称)?|件\s*名)[\s　]*[：:\t]?[\s　]*(.*)$/;
+  const CONT=/^[\s　]*(業\s*務\s*(の\s*)?(内\s*容|概\s*要|目\s*的)|内\s*容|目\s*的)[\s　]*[：:\t]?[\s　]*(.*)$/;
+  let ni=-1,name='';
+  for(let i=0;i<lines.length;i++){
+    const m=lines[i].match(NAME);
+    if(m){
+      name=(m[4]||'').trim();
+      ni=i;
+      if(!name){ // 値が次の行にある場合
+        for(let j=i+1;j<lines.length;j++){if(lines[j].trim()){name=lines[j].trim();ni=j;break;}}
+      }
+      break;
+    }
+  }
+  if(!name)return{name:'',content:''};
+  let content='';
+  for(let i=ni+1;i<lines.length;i++){
+    const m=lines[i].match(CONT);
+    if(m){content=((m[4]||'')+'\n'+lines.slice(i+1).join('\n')).trim();break;}
+  }
+  if(!content)content=lines.slice(ni+1).join('\n').trim();
+  return{name,content};
+}
+
 // 「（１）業務名　XXXX （２）業務内容 XXXX...」「１）業 務 名　XXXX」等、
 // 番号ラベルの表記ゆれ（括弧の有無・全角数字・ラベル内の空白）に対応して業務名・業務内容を抽出
 function parseGyomuDetail(text){
@@ -882,7 +910,7 @@ function parseGyomuDetail(text){
   const stripSep=s=>s.replace(/^[\s　]*[：:－\-]?[\s　]*/,'').trim();
 
   const nm=text.match(NAME_LABEL);
-  if(!nm)return{name:'',content:''};
+  if(!nm)return parseGyomuDetailLines(text);
 
   // 業務名の終端：業務名ラベルの直後から、次に現れるラベル（見出し語は問わない）までを名称とみなす
   ANY_LABEL.lastIndex=nm.index+nm[0].length;
@@ -912,8 +940,16 @@ function applyGyomuDetail(){
   if(!window._canEdit){showToast('編集にはログインが必要です','warn');return;}
   const raw=document.getElementById('gyomuDetailTA').value.trim();
   if(!raw){showToast('テキストが入力されていません','warn');return;}
-  const{name,content}=parseGyomuDetail(raw);
-  if(!name){showToast('「業務名」を認識できませんでした','warn');return;}
+  const manual=(document.getElementById('gyomuNameIn').value||'').trim();
+  let name,content;
+  if(manual){
+    // 業務名を手入力した場合：貼り付けテキスト全体を業務内容とする（先頭の「業務内容」見出しだけ除去）
+    name=manual;
+    content=raw.replace(/^[\s　]*(業\s*務\s*(の\s*)?(内\s*容|概\s*要)|内\s*容)[\s　]*[：:]?[\s　]*/,'').trim();
+  } else {
+    ({name,content}=parseGyomuDetail(raw));
+  }
+  if(!name){showToast('業務名を認識できませんでした。上の「業務名」欄に案件名を入力してください','warn');return;}
   if(!content){showToast('「業務内容」を認識できませんでした','warn');return;}
   // 業務名が完全一致する案件を検索（コピペ時の空白・改行の差異は無視して比較）
   const stripWs=s=>s.replace(/[\s　]+/g,'');
@@ -927,7 +963,7 @@ function applyGyomuDetail(){
   target._judgment='track';// 業務内容が入った案件は自動で追跡案件に
   target.date=todayDateStr();// 更新日は反映操作を行った当日の日付
   save();rebuild();
-  document.getElementById('gyomuDetailTA').value='';
+  document.getElementById('gyomuDetailTA').value='';document.getElementById('gyomuNameIn').value='';
   showToast('業務内容を反映しました（判定：追跡案件）：'+target.name,'success');
 }
 
