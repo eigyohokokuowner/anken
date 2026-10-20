@@ -3251,6 +3251,8 @@ function toggleDetailPanel(){
   document.getElementById('detailToggle').textContent=dpOpen?'▲ 閉じる':'▼ 開く';
 }
 function parseBlock(text){
+  // 正規化前の原文（行頭ラベル＋タブ区切りの通常形式なら、こちらから値を確実に取れる）
+  const origText=String(text).replace(/\r\n?/g,'\n');
   // マークダウン/連結形式を通常テキストに正規化
   text=text.replace(/\[([^\]]*?)\]\([^)]+\)/g,'$1');
   text=text.replace(/\x60{3}[\s\S]*?\x60{3}/g,s=>s.replace(/\x60{3}/g,''));// コードブロック除去
@@ -3271,6 +3273,16 @@ function parseBlock(text){
   });
   const lblPat='工事種別|担当部|工事名称|工事場所|入札契約方式|発注規模|公告予定|入札予定|WTO対象|ECI方式|一括審査|最終更新|工期|概要|その他|掲載月|留意事項|発注機関';
   const get=label=>{
+    // ①原文で「行頭のラベル＋タブ/空白＋値」の形があれば、その行の値をそのまま使う。
+    //   値の中に「その他」「工期」などラベルと同じ語が含まれていても途中で切らない
+    //   （例：「〇〇設備改修その他工事」が「〇〇設備改修」に切れて工事名不一致になっていた）
+    const lm=origText.match(new RegExp('(?:^|\\n)[ \\t\u3000]*'+label+'[\\t\u3000 ]+([^\\n]+)'));
+    if(lm){
+      // 同じ行に別の項目が続く場合（タブ区切り、または空白＋ラベル）はそこで切る
+      const cell=(lm[1].split('\t').map(x=>x.trim()).find(x=>x)||'').split(new RegExp('[\\s\u3000]+(?:'+lblPat+')'))[0].trim();
+      if(cell&&!/^[-－ー\s　]*$/.test(cell))return cell;
+    }
+    // ②連結形式などはこれまでどおり正規化後のテキストから取得
     // ラベルの直後がタブ+改行の場合は空（値なし）と判定
     const m=text.match(new RegExp(label+'[\t　 ]+([^\t\n][^\n]*)'));
     if(!m)return'';
