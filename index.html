@@ -256,7 +256,7 @@
     #judgmentFilterBtn { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
     #typeFilterBtn     { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
     /* 3行目: 発注規模・予定時期・更新日（各33%） */
-    #scaleFilterBtn    { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
+    #noWinnerBtn       { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
     #periodFilterBtn   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
     #dateRangeFilter   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; margin-left: 0 !important; box-sizing: border-box; font-size: 11px; padding: 4px 4px; height: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; }
     /* 落札会社・グラフは非表示（pc-only） */
@@ -471,22 +471,8 @@
           </div>
         </div>
       </div>
-      <div style="position:relative;display:inline-block">
-        <button id="scaleFilterBtn" onclick="toggleScaleDropdown(event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:120px;text-align:left">落札金額：すべて ▾</button>
-        <div id="scaleDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:160px;margin-top:2px">
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku6+" onchange="applyScaleFilter()"> 6億円以上</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku5-6" onchange="applyScaleFilter()"> 5億円〜6億円</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku4-5" onchange="applyScaleFilter()"> 4億円〜5億円</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku3-4" onchange="applyScaleFilter()"> 3億円〜4億円</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku2-3" onchange="applyScaleFilter()"> 2億円〜3億円</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku1-2" onchange="applyScaleFilter()"> 1億円〜2億円</label>
-          <label style="display:flex;align-items:center;gap:6px;padding:4px 2px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="oku1-" onchange="applyScaleFilter()"> 1億円以下</label>
-          <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;gap:6px">
-            <button onclick="scaleCheckAll(true)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全選択</button>
-            <button onclick="scaleCheckAll(false)" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--surface)">全解除</button>
-          </div>
-        </div>
-      </div>
+      <!-- 落札者未定：落札者の名前が記載されていない工事だけを表示（押すたびにON/OFF） -->
+      <button id="noWinnerBtn" onclick="toggleNoWinnerFilter()" aria-pressed="false" title="落札者の名前が記載されていない工事だけを表示します" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;white-space:nowrap">落札者未定</button>
       <div style="position:relative;display:inline-block">
         <button id="periodFilterBtn" onclick="toggleDropdown('periodDropdown',event)" style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);cursor:pointer;min-width:130px;text-align:left">予定時期：すべて ▾</button>
         <div id="periodDropdown" style="display:none;position:absolute;top:100%;left:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:180px;margin-top:2px;max-height:240px;overflow-y:auto">
@@ -825,7 +811,7 @@
     #judgmentFilterBtn { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
     #typeFilterBtn     { flex: 1 1 calc(33% - 4px); min-width: 0; order: 1; font-size: 11px; padding: 4px 4px; }
     /* 3行目: 発注規模・予定時期・更新日（各33%） */
-    #scaleFilterBtn    { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
+    #noWinnerBtn       { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
     #periodFilterBtn   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; font-size: 11px; padding: 4px 4px; }
     #dateRangeFilter   { flex: 1 1 calc(33% - 4px); min-width: 0; order: 2; margin-left: 0 !important; box-sizing: border-box; font-size: 11px; padding: 4px 4px; height: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; }
     /* 落札会社・グラフは非表示（pc-only） */
@@ -3759,6 +3745,21 @@ function toggleScaleDropdown(e){
   d.style.display=d.style.display==='none'?'block':'none';
 }
 // scaleDropdownのcloseはtoggleDropdown内で処理
+// ─── 落札者未定フィルター ───
+window._noWinnerOnly=false;
+function toggleNoWinnerFilter(){
+  window._noWinnerOnly=!window._noWinnerOnly;
+  const b=document.getElementById('noWinnerBtn');
+  if(b){
+    b.setAttribute('aria-pressed',String(window._noWinnerOnly));
+    b.textContent=window._noWinnerOnly?'✓ 落札者未定':'落札者未定';
+    b.style.background=window._noWinnerOnly?'#1a4fa0':'var(--surface)';
+    b.style.color=window._noWinnerOnly?'#fff':'';
+    b.style.borderColor=window._noWinnerOnly?'#1a4fa0':'var(--border)';
+    b.style.fontWeight=window._noWinnerOnly?'600':'';
+  }
+  applyFilters();
+}
 function scaleCheckAll(val){
   document.querySelectorAll('#scaleDropdown input[type=checkbox]').forEach(cb=>cb.checked=val);
   applyScaleFilter();
@@ -3766,6 +3767,7 @@ function scaleCheckAll(val){
 function applyScaleFilter(){
   const checked=[...document.querySelectorAll('#scaleDropdown input:checked')].map(cb=>cb.value);
   const btn=document.getElementById('scaleFilterBtn');
+  if(!btn){applyFilters();return;}// 落札金額フィルターは廃止（落札者未定に置き換え）
   if(checked.length===0||checked.length===7){
     btn.textContent='発注規模：すべて ▾';
   } else {
@@ -3813,6 +3815,8 @@ function applyFilters(){
     if(cf==='j-bid'&&r._judgment!=='bid')return false;
     if(cf==='j-pass'&&r._judgment!=='pass')return false;
     if(cf==='j-out'&&r._judgment!=='out')return false;
+    // 落札者未定フィルター：落札者の名前がない工事だけ
+    if(window._noWinnerOnly&&String(r.rakusatsuSha||'').replace(/[\s\u3000]/g,''))return false;
     // 状態フィルター（複数選択）チェックが1つ以上ある場合のみ適用
     const statusTotal=document.querySelectorAll('#statusDropdown input[type=checkbox]').length;
     if(statusChecked.length>0&&statusChecked.length<statusTotal){
